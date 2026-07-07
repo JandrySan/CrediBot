@@ -1,33 +1,27 @@
-from app.services.ai.extraction_service import ExtractionService
-from app.services.ai.response_service import ResponseService
+from app.services.ai.intent_detector import IntentDetector
+from app.services.ai.entity_extractor import EntityExtractor
+from app.services.ai.response_generator import ResponseGenerator
+from app.services.ai.ai_gateway import AIGateway
 
 
 class AIOrchestrator:
     def __init__(self):
-        self.extractor = ExtractionService()
-        self.response_service = ResponseService()
+        self.intent_detector = IntentDetector()
+        self.entity_extractor = EntityExtractor()
+        self.response_generator = ResponseGenerator()
+        self.gateway = AIGateway()
 
     def analyze_message(self, text: str) -> dict:
-        data = self.extractor.extract_credit_data(text)
+        intent = self.intent_detector.detect(text)
+        entities = self.entity_extractor.extract_credit_entities(text)
 
-        if not data.get("intent"):
-            data["intent"] = self._basic_intent_detection(text)
-
-        return data
+        return {
+            "intent": intent,
+            **entities,
+        }
 
     def improve_response(self, message: str) -> str:
-        return self.response_service.humanize(message)
+        return self.response_generator.generate(message)
 
-    def _basic_intent_detection(self, text: str) -> str:
-        normalized = text.lower()
-
-        if any(word in normalized for word in ["asesor", "humano", "persona", "agente"]):
-            return "asesor"
-
-        if any(word in normalized for word in ["credito", "crédito", "prestamo", "préstamo", "dinero"]):
-            return "credito"
-
-        if any(word in normalized for word in ["hola", "buenas", "buenos días", "buenas tardes"]):
-            return "saludo"
-
-        return "desconocido"
+    def get_model_name(self) -> str:
+        return self.gateway.get_model_name()

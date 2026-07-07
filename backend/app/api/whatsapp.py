@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from twilio.twiml.messaging_response import MessagingResponse
 
 from app.database.session import get_db
-from app.services.conversation.conversation_manager import ConversationManager
+from app.services.conversation.orchestrator import ConversationOrchestrator
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp"])
 
@@ -15,8 +15,9 @@ def receive_whatsapp_message(
     Body: str = Form(""),
     db: Session = Depends(get_db)
 ):
-    manager = ConversationManager(db)
-    response_text = manager.process_message(
+    orchestrator = ConversationOrchestrator(db)
+
+    response_text = orchestrator.handle_text_message(
         phone_number=From,
         text=Body
     )

@@ -40,3 +40,15 @@ class ConversationRepository:
         self.db.refresh(conversation)
 
         return conversation
+    
+    def update_state_if_changed(self, conversation: Conversation, new_state: str):
+        previous_state = conversation.current_state
+
+        if previous_state == new_state:
+            return conversation, previous_state, False
+
+        conversation.current_state = new_state
+        self.db.commit()
+        self.db.refresh(conversation)
+
+        return conversation, previous_state, True
