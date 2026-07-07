@@ -1,48 +1,16 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { DashboardService } from "../services/dashboard.service";
-import type { DashboardStats } from "../services/dashboard.service";
-
 
 export function useDashboard() {
+  const statsQuery = useQuery({
+    queryKey: ["dashboard-stats"],
+    queryFn: DashboardService.getStats,
+    refetchInterval: 5000,
+  });
 
-    const [stats, setStats] = useState<DashboardStats | null>(null);
-
-    const [loading, setLoading] = useState(true);
-
-    const [error, setError] = useState("");
-
-    useEffect(() => {
-
-        DashboardService.getStats()
-
-            .then((response) => {
-
-                setStats(response);
-
-            })
-
-            .catch(() => {
-
-                setError("No se pudo conectar con el backend.");
-
-            })
-
-            .finally(() => {
-
-                setLoading(false);
-
-            });
-
-    }, []);
-
-    return {
-
-        stats,
-
-        loading,
-
-        error,
-
-    };
-
+  return {
+    stats: statsQuery.data,
+    loading: statsQuery.isLoading,
+    error: statsQuery.isError,
+  };
 }
