@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.database.init_db import init_db
+from app.api.whatsapp import router as whatsapp_router
 
 app = FastAPI(
     title="CrediBot API",
@@ -11,6 +12,9 @@ app = FastAPI(
 @app.on_event("startup")
 def startup():
     init_db()
+
+
+app.include_router(whatsapp_router)
 
 
 @app.get("/")
