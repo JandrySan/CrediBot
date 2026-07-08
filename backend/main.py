@@ -5,6 +5,8 @@ from app.database.init_db import init_db
 from app.api.whatsapp import router as whatsapp_router
 from app.api.dashboard import router as dashboard_router
 
+from app.api.websocket import router as websocket_router
+
 app = FastAPI(
     title="CrediBot API",
     version="1.0.0"
@@ -29,6 +31,7 @@ def startup():
 
 app.include_router(whatsapp_router)
 app.include_router(dashboard_router)
+app.include_router(websocket_router)
 
 
 @app.get("/")

@@ -11,6 +11,7 @@ import type { Conversation } from "../../types/conversation";
 
 type Props = {
   conversation: Conversation;
+  onClick?: (conversation: Conversation) => void;
 };
 
 function getResultColor(result: string | null) {
@@ -20,12 +21,13 @@ function getResultColor(result: string | null) {
   return "default";
 }
 
-export function ConversationItem({ conversation }: Props) {
+export function ConversationItem({ conversation, onClick }: Props) {
   const name = conversation.full_name || conversation.phone_number;
   const initials = name.substring(0, 2).toUpperCase();
 
   return (
     <ListItemButton
+      onClick={() => onClick?.(conversation)}
       sx={{
         borderRadius: 3,
         mb: 1,

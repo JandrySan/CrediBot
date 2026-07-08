@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import {
   Alert,
   Box,
@@ -9,9 +11,19 @@ import {
 } from "@mui/material";
 
 import { ConversationList } from "../components/conversations/ConversationList";
+import { ConversationChat } from "../components/conversations/ConversationChat";
 import { useDashboard } from "../hooks/useDashboard";
 
+import { ConversationInfoPanel } from "../components/conversations/ConversationInfoPanel";
+
+import { useDashboardSocket } from "../hooks/useDashboardSocket";
+import type { Conversation } from "../types/conversation";
+
 export function DashboardPage() {
+  useDashboardSocket();
+  const [selectedConversation, setSelectedConversation] =
+    useState<Conversation | null>(null);
+
   const { stats, loading, error } = useDashboard();
 
   if (loading) {
@@ -37,7 +49,7 @@ export function DashboardPage() {
 
   return (
     <Box>
-      <Typography variant="h4" fontWeight="bold" mb={4}>
+      <Typography variant="h4" fontWeight="bold" mb={3}>
         Panel
       </Typography>
 
@@ -59,7 +71,28 @@ export function DashboardPage() {
         ))}
       </Grid>
 
-      <ConversationList />
+      <Box
+        sx={{
+          display: "flex",
+          gap: 3,
+          mt: 3,
+          alignItems: "stretch",
+        }}
+      >
+        <Box sx={{ width: "34%", minWidth: 360 }}>
+          <ConversationList onSelect={setSelectedConversation} />
+        </Box>
+
+        <Box sx={{ flex: 1, display: "flex", gap: 3 }}>
+          <Box sx={{ flex: 2 }}>
+            <ConversationChat conversation={selectedConversation} />
+          </Box>
+
+          <Box sx={{ width: 320 }}>
+            <ConversationInfoPanel conversation={selectedConversation} />
+          </Box>
+        </Box>
+      </Box>
     </Box>
   );
 }

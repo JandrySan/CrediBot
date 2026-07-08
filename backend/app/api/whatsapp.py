@@ -5,12 +5,13 @@ from twilio.twiml.messaging_response import MessagingResponse
 
 from app.database.session import get_db
 from app.services.conversation.orchestrator import ConversationOrchestrator
+from app.services.websocket.connection_manager import manager
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp"])
 
 
 @router.post("/whatsapp")
-def receive_whatsapp_message(
+async def receive_whatsapp_message(
     From: str = Form(...),
     Body: str = Form(""),
     db: Session = Depends(get_db)
@@ -24,5 +25,11 @@ def receive_whatsapp_message(
 
     twilio_response = MessagingResponse()
     twilio_response.message(response_text)
+
+    await manager.broadcast({
+        "type": "NEW_MESSAGE",
+        "phone_number": From,
+        "message": Body
+    })
 
     return PlainTextResponse(str(twilio_response), media_type="application/xml")
