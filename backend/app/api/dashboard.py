@@ -8,6 +8,7 @@ from app.models.customer import Customer
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.credit_application import CreditApplication
+from app.services.whatsapp.twilio_service import TwilioWhatsAppService
 
 from fastapi import Form
 from app.services.websocket.connection_manager import manager
@@ -138,6 +139,18 @@ async def reply_conversation(
             "message": "Conversación no encontrada"
         }
 
+    customer = (
+        db.query(Customer)
+        .filter(Customer.id == conversation.customer_id)
+        .first()
+    )
+
+    if not customer:
+        return {
+            "success": False,
+            "message": "Cliente no encontrado"
+        }
+
     outbound_message = Message(
         conversation_id=conversation.id,
         direction="OUTBOUND",
@@ -149,6 +162,12 @@ async def reply_conversation(
     db.commit()
     db.refresh(outbound_message)
 
+    twilio_service = TwilioWhatsAppService()
+    twilio_result = twilio_service.send_message(
+        to=customer.phone_number,
+        body=message
+    )
+
     await manager.broadcast({
         "type": "AGENT_REPLY",
         "conversation_id": conversation.id,
@@ -158,5 +177,6 @@ async def reply_conversation(
     return {
         "success": True,
         "message": "Respuesta enviada por asesor",
-        "conversation_id": conversation.id
+        "conversation_id": conversation.id,
+        "twilio": twilio_result
     }
