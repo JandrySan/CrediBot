@@ -12,10 +12,14 @@ router = APIRouter(prefix="/webhook", tags=["WhatsApp"])
 
 @router.post("/whatsapp")
 async def receive_whatsapp_message(
-    From: str = Form(...),
-    Body: str = Form(""),
+    From: str = Form(default=""),
+    Body: str = Form(default=""),
+    ProfileName: str = Form(default=""),
     db: Session = Depends(get_db)
 ):
+    if not From:
+        return PlainTextResponse("", media_type="application/xml")
+
     orchestrator = ConversationOrchestrator(db)
 
     response_text = orchestrator.handle_text_message(
@@ -29,7 +33,8 @@ async def receive_whatsapp_message(
     await manager.broadcast({
         "type": "NEW_MESSAGE",
         "phone_number": From,
-        "message": Body
+        "message": Body,
+        "profile_name": ProfileName,
     })
 
     return PlainTextResponse(str(twilio_response), media_type="application/xml")

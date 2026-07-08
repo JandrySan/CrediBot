@@ -36,8 +36,8 @@ Tecnologías utilizadas:
 - React Query
 - WebSockets
 - Groq API (IA)
-- Twilio (pendiente de integración final)
-- Ngrok (pendiente)
+- Twilio WhatsApp (✅ integrado)
+- Ngrok (para tunneling local)
 
 ---
 
@@ -174,11 +174,35 @@ POST
 
 Permite responder desde el panel del asesor.
 
-Actualmente:
+- Guarda el mensaje en la base de datos
+- Envía el mensaje a través de Twilio WhatsApp
+- Actualiza el chat en tiempo real para el cliente y el asesor
 
-- guarda el mensaje
-- actualiza el chat
-- prepara integración con Twilio
+---
+
+## Integración Twilio
+
+✅ **Estado: Implementada y funcionando**
+
+### Webhook de entrada
+- **Endpoint:** POST /webhook/whatsapp
+- **Recibe:** Mensajes de WhatsApp desde Twilio
+- **Procesa:** El mensaje a través del orquestador de conversación
+- **Responde:** Con TwiML válido para Twilio
+
+### Servicio de envío
+- **Normalización:** Convierte números al formato E.164 (ej: +3001234567)
+- **Fallback:** Soporta tanto TWILIO_WHATSAPP_FROM como TWILIO_WHATSAPP_NUMBER
+- **Manejo de errores:** Captura excepciones de Twilio sin romper el flujo
+
+### Configuración requerida
+Las siguientes variables deben estar en `.env`:
+- TWILIO_ENABLED=true
+- TWILIO_ACCOUNT_SID=tu_sid
+- TWILIO_AUTH_TOKEN=tu_token
+- TWILIO_WHATSAPP_FROM=whatsapp:+1415XXXXXXX
+- TWILIO_WHATSAPP_NUMBER=+1415XXXXXXX
+- TWILIO_WEBHOOK_URL=https://tu-tunel/webhook/whatsapp
 
 ---
 

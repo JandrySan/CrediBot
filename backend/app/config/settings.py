@@ -9,11 +9,13 @@ class Settings(BaseSettings):
     DB_PORT: int = 5432
     DB_NAME: str = "credibot"
     DB_USER: str = "postgres"
-    DB_PASSWORD: str = ""
+    DB_PASSWORD: str = "12345678"
 
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_WHATSAPP_FROM: str = ""
     TWILIO_WHATSAPP_NUMBER: str = ""
+    TWILIO_WEBHOOK_URL: str = ""
     TWILIO_ENABLED: bool = False
 
     GROQ_API_KEY: str = ""
