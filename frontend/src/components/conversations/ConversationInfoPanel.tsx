@@ -1,5 +1,6 @@
 import {
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -8,6 +9,7 @@ import {
   Typography,
 } from "@mui/material";
 
+import { useTakeConversation } from "../../hooks/useTakeConversation";
 import type { Conversation } from "../../types/conversation";
 
 type Props = {
@@ -26,6 +28,8 @@ function InfoRow({ label, value }: { label: string; value: string | number }) {
 }
 
 export function ConversationInfoPanel({ conversation }: Props) {
+  const takeConversation = useTakeConversation();
+
   if (!conversation) {
     return (
       <Card elevation={1} sx={{ borderRadius: 3, height: 620 }}>
@@ -39,7 +43,7 @@ export function ConversationInfoPanel({ conversation }: Props) {
   }
 
   return (
-    <Card elevation={1} sx={{ borderRadius: 3, height: 620 }}>
+    <Card elevation={1} sx={{ borderRadius: 3, height: 620, overflowY: "auto" }}>
       <CardContent>
         <Typography variant="h6" fontWeight={700} mb={2}>
           Información del cliente
@@ -95,8 +99,8 @@ export function ConversationInfoPanel({ conversation }: Props) {
                 conversation.credit_result === "PREAPROBADO"
                   ? "success"
                   : conversation.credit_result === "OBSERVADO"
-                  ? "warning"
-                  : "default"
+                    ? "warning"
+                    : "default"
               }
               sx={{ mt: 1 }}
             />
@@ -111,6 +115,21 @@ export function ConversationInfoPanel({ conversation }: Props) {
 
           <InfoRow label="Estado conversación" value={conversation.state} />
           <InfoRow label="Atención" value={conversation.status} />
+
+          <Divider />
+
+          <Button
+            variant="contained"
+            color="primary"
+            disabled={
+              conversation.status === "HANDOFF" || takeConversation.isPending
+            }
+            onClick={() => takeConversation.mutate(conversation.conversation_id)}
+          >
+            {conversation.status === "HANDOFF"
+              ? "Conversación tomada"
+              : "Tomar conversación"}
+          </Button>
         </Stack>
       </CardContent>
     </Card>

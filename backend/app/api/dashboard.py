@@ -2,11 +2,15 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+from app.state_machine.states import ConversationState
 from app.database.session import get_db
 from app.models.customer import Customer
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.credit_application import CreditApplication
+
+from fastapi import Form
+from app.services.websocket.connection_manager import manager
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
@@ -83,3 +87,76 @@ def get_conversation_messages(
         }
         for message in messages
     ]
+
+@router.post("/conversations/{conversation_id}/take")
+def take_conversation(
+    conversation_id: int,
+    db: Session = Depends(get_db)
+):
+    conversation = (
+        db.query(Conversation)
+        .filter(Conversation.id == conversation_id)
+        .first()
+    )
+
+    if not conversation:
+        return {
+            "success": False,
+            "message": "Conversación no encontrada"
+        }
+
+    conversation.status = "HANDOFF"
+    conversation.current_state = ConversationState.HANDOFF.value
+
+    db.commit()
+    db.refresh(conversation)
+
+    return {
+        "success": True,
+        "message": "Conversación tomada por asesor",
+        "conversation_id": conversation.id,
+        "status": conversation.status,
+        "state": conversation.current_state
+    }
+
+
+@router.post("/conversations/{conversation_id}/reply")
+async def reply_conversation(
+    conversation_id: int,
+    message: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    conversation = (
+        db.query(Conversation)
+        .filter(Conversation.id == conversation_id)
+        .first()
+    )
+
+    if not conversation:
+        return {
+            "success": False,
+            "message": "Conversación no encontrada"
+        }
+
+    outbound_message = Message(
+        conversation_id=conversation.id,
+        direction="OUTBOUND",
+        message_type="TEXT",
+        content=message
+    )
+
+    db.add(outbound_message)
+    db.commit()
+    db.refresh(outbound_message)
+
+    await manager.broadcast({
+        "type": "AGENT_REPLY",
+        "conversation_id": conversation.id,
+        "message": message
+    })
+
+    return {
+        "success": True,
+        "message": "Respuesta enviada por asesor",
+        "conversation_id": conversation.id
+    }

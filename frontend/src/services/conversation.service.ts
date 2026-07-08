@@ -14,5 +14,30 @@ export const ConversationService = {
     );
 
     return response.data;
+
+  },
+  async takeConversation(conversationId: number) {
+    const response = await api.post(
+      `/api/dashboard/conversations/${conversationId}/take`
+    );
+
+    return response.data;
+  },
+
+  async replyConversation(conversationId: number, message: string) {
+    const formData = new FormData();
+    formData.append("message", message);
+
+    const response = await api.post(
+      `/api/dashboard/conversations/${conversationId}/reply`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
+
+    return response.data;
   },
 };

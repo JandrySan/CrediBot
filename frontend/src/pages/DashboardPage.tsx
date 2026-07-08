@@ -7,20 +7,28 @@ import {
   CardContent,
   CircularProgress,
   Grid,
+  Stack,
   Typography,
 } from "@mui/material";
 
+import PeopleIcon from "@mui/icons-material/People";
+import ForumIcon from "@mui/icons-material/Forum";
+import BoltIcon from "@mui/icons-material/Bolt";
+import SupportAgentIcon from "@mui/icons-material/SupportAgent";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import WarningIcon from "@mui/icons-material/Warning";
+
 import { ConversationList } from "../components/conversations/ConversationList";
 import { ConversationChat } from "../components/conversations/ConversationChat";
-import { useDashboard } from "../hooks/useDashboard";
-
 import { ConversationInfoPanel } from "../components/conversations/ConversationInfoPanel";
-
+import { useDashboard } from "../hooks/useDashboard";
 import { useDashboardSocket } from "../hooks/useDashboardSocket";
+
 import type { Conversation } from "../types/conversation";
 
 export function DashboardPage() {
   useDashboardSocket();
+
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
 
@@ -39,32 +47,55 @@ export function DashboardPage() {
   }
 
   const cards = [
-    { title: "Clientes", value: stats?.customers ?? 0 },
-    { title: "Conversaciones", value: stats?.conversations ?? 0 },
-    { title: "Activas", value: stats?.active_conversations ?? 0 },
-    { title: "Derivadas", value: stats?.handoff_conversations ?? 0 },
-    { title: "Preaprobados", value: stats?.preapproved ?? 0 },
-    { title: "Observados", value: stats?.observed ?? 0 },
+    { title: "Clientes", value: stats?.customers ?? 0, icon: <PeopleIcon />, helper: "Registrados" },
+    { title: "Conversaciones", value: stats?.conversations ?? 0, icon: <ForumIcon />, helper: "Totales" },
+    { title: "Activas", value: stats?.active_conversations ?? 0, icon: <BoltIcon />, helper: "Bot activo" },
+    { title: "Derivadas", value: stats?.handoff_conversations ?? 0, icon: <SupportAgentIcon />, helper: "Asesor humano" },
+    { title: "Preaprobados", value: stats?.preapproved ?? 0, icon: <CheckCircleIcon />, helper: "Créditos viables" },
+    { title: "Observados", value: stats?.observed ?? 0, icon: <WarningIcon />, helper: "Requieren revisión" },
   ];
 
   return (
     <Box>
-      <Typography variant="h4" fontWeight="bold" mb={3}>
-        Panel
-      </Typography>
+      <Box mb={3}>
+        <Typography variant="h4">Panel operativo</Typography>
+        <Typography color="text.secondary">
+          Supervisión en tiempo real de WhatsApp, IA y precalificaciones.
+        </Typography>
+      </Box>
 
-      <Grid container spacing={3}>
+      <Grid container spacing={2.5}>
         {cards.map((card) => (
           <Grid item xs={12} sm={6} md={4} lg={2} key={card.title}>
-            <Card elevation={1} sx={{ borderRadius: 3 }}>
+            <Card sx={{ height: 132 }}>
               <CardContent>
-                <Typography color="text.secondary" fontWeight={500}>
-                  {card.title}
-                </Typography>
+                <Stack direction="row" justifyContent="space-between">
+                  <Box>
+                    <Typography color="text.secondary" fontWeight={700}>
+                      {card.title}
+                    </Typography>
+                    <Typography variant="h3" fontWeight={900}>
+                      {card.value}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {card.helper}
+                    </Typography>
+                  </Box>
 
-                <Typography variant="h3" fontWeight={700}>
-                  {card.value}
-                </Typography>
+                  <Box
+                    sx={{
+                      width: 42,
+                      height: 42,
+                      borderRadius: 3,
+                      bgcolor: "#CCFBF1",
+                      color: "#0F766E",
+                      display: "grid",
+                      placeItems: "center",
+                    }}
+                  >
+                    {card.icon}
+                  </Box>
+                </Stack>
               </CardContent>
             </Card>
           </Grid>
@@ -79,7 +110,7 @@ export function DashboardPage() {
           alignItems: "stretch",
         }}
       >
-        <Box sx={{ width: "34%", minWidth: 360 }}>
+        <Box sx={{ width: "33%", minWidth: 390 }}>
           <ConversationList onSelect={setSelectedConversation} />
         </Box>
 
@@ -88,7 +119,7 @@ export function DashboardPage() {
             <ConversationChat conversation={selectedConversation} />
           </Box>
 
-          <Box sx={{ width: 320 }}>
+          <Box sx={{ width: 330 }}>
             <ConversationInfoPanel conversation={selectedConversation} />
           </Box>
         </Box>

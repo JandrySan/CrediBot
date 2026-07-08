@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_WHATSAPP_NUMBER: str = ""
+    TWILIO_ENABLED: bool = False
 
     GROQ_API_KEY: str = ""
 

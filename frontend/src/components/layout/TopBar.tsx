@@ -1,4 +1,4 @@
-import { AppBar, Avatar, Box, Toolbar, Typography } from "@mui/material";
+import { AppBar, Avatar, Box, Chip, Toolbar, Typography } from "@mui/material";
 
 export function TopBar() {
   return (
@@ -6,22 +6,26 @@ export function TopBar() {
       position="static"
       elevation={0}
       sx={{
-        background: "white",
-        color: "#1f2937",
-        borderBottom: "1px solid #e5e7eb",
+        background: "rgba(255,255,255,0.88)",
+        backdropFilter: "blur(12px)",
+        color: "#0F172A",
+        borderBottom: "1px solid #E2E8F0",
       }}
     >
-      <Toolbar sx={{ justifyContent: "space-between" }}>
+      <Toolbar sx={{ justifyContent: "space-between", minHeight: 72 }}>
         <Box>
-          <Typography variant="h6" fontWeight={700}>
+          <Typography variant="h6" fontWeight={800}>
             Panel de Asesor
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Monitoreo de conversaciones y precalificaciones
+            Gestión de conversaciones, créditos e IA
           </Typography>
         </Box>
 
-        <Avatar sx={{ bgcolor: "#128C7E" }}>A</Avatar>
+        <Box display="flex" alignItems="center" gap={2}>
+          <Chip label="En línea" color="success" size="small" />
+          <Avatar sx={{ bgcolor: "#0F766E", fontWeight: 800 }}>A</Avatar>
+        </Box>
       </Toolbar>
     </AppBar>
   );

@@ -13,6 +13,8 @@ import {
   Typography,
 } from "@mui/material";
 
+import SearchIcon from "@mui/icons-material/Search";
+
 import { useConversations } from "../../hooks/useConversations";
 import { ConversationItem } from "./ConversationItem";
 import type { Conversation } from "../../types/conversation";
@@ -25,8 +27,8 @@ type FilterType = "ALL" | "ACTIVE" | "HANDOFF" | "PREAPPROVED" | "OBSERVED";
 
 const filters: { label: string; value: FilterType }[] = [
   { label: "Todas", value: "ALL" },
-  { label: "Activas", value: "ACTIVE" },
-  { label: "Derivadas", value: "HANDOFF" },
+  { label: "Bot", value: "ACTIVE" },
+  { label: "Asesor", value: "HANDOFF" },
   { label: "Preaprobadas", value: "PREAPPROVED" },
   { label: "Observadas", value: "OBSERVED" },
 ];
@@ -48,10 +50,6 @@ export function ConversationList({ onSelect }: Props) {
   const filteredConversations = useMemo(() => {
     const searchValue = normalize(search);
 
-    console.log("BUSQUEDA:", search);
-    console.log("FILTRO:", selectedFilter);
-    console.log("DATA:", data);
-    
     return data.filter((conversation) => {
       const name = normalize(conversation.full_name);
       const phone = normalize(conversation.phone_number);
@@ -61,22 +59,24 @@ export function ConversationList({ onSelect }: Props) {
         name.includes(searchValue) ||
         phone.includes(searchValue);
 
-      const matchesStatus =
+      const matchesFilter =
         selectedFilter === "ALL" ||
         (selectedFilter === "ACTIVE" && conversation.status === "ACTIVE") ||
-        (selectedFilter === "HANDOFF" && conversation.status === "HANDOFF") ||
+        (selectedFilter === "HANDOFF" &&
+          (conversation.status === "HANDOFF" ||
+            conversation.status === "MANOS LIBRES")) ||
         (selectedFilter === "PREAPPROVED" &&
           conversation.credit_result === "PREAPROBADO") ||
         (selectedFilter === "OBSERVED" &&
           conversation.credit_result === "OBSERVADO");
 
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesFilter;
     });
   }, [data, search, selectedFilter]);
 
   if (isLoading) {
     return (
-      <Card elevation={1} sx={{ borderRadius: 3, height: 620 }}>
+      <Card sx={{ borderRadius: 4, height: 620 }}>
         <CardContent>
           <Box display="flex" justifyContent="center" py={4}>
             <CircularProgress />
@@ -91,11 +91,16 @@ export function ConversationList({ onSelect }: Props) {
   }
 
   return (
-    <Card elevation={1} sx={{ borderRadius: 3, height: 620, overflow: "hidden" }}>
-      <CardContent>
-        <Typography variant="h6" fontWeight={700} mb={2}>
-          Conversaciones recientes
-        </Typography>
+    <Card sx={{ borderRadius: 4, height: 620, overflow: "hidden" }}>
+      <CardContent sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <Stack direction="row" justifyContent="space-between" mb={2}>
+          <Box>
+            <Typography variant="h6">Conversaciones</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {filteredConversations.length} resultado(s)
+            </Typography>
+          </Box>
+        </Stack>
 
         <TextField
           fullWidth
@@ -103,6 +108,9 @@ export function ConversationList({ onSelect }: Props) {
           placeholder="Buscar cliente o teléfono"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
+          InputProps={{
+            startAdornment: <SearchIcon sx={{ color: "#94A3B8", mr: 1 }} />,
+          }}
           sx={{ mb: 2 }}
         />
 
@@ -120,7 +128,7 @@ export function ConversationList({ onSelect }: Props) {
           ))}
         </Stack>
 
-        <List disablePadding sx={{ maxHeight: 440, overflowY: "auto" }}>
+        <List disablePadding sx={{ flex: 1, overflowY: "auto", pr: 1 }}>
           {filteredConversations.map((conversation) => (
             <ConversationItem
               key={conversation.conversation_id}
