@@ -2,154 +2,322 @@
 
 Asistente de precalificacion de creditos por WhatsApp.
 
-Actualizado: 2026-07-08
+Actualizado: 2026-07-09
 
-## Estado real del proyecto
+## Estado actual
 
-- Backend funcional con FastAPI + SQLAlchemy.
-- Frontend funcional con React + TypeScript.
-- Integracion de WhatsApp por Twilio activa.
-- IA con Groq activa.
-- Transcripcion de audio de WhatsApp a texto activa (Groq STT por defecto; local opcional).
-- Respuesta del bot en audio por WhatsApp activa (nota de voz via archivo OGG/Opus).
-- Reglas de negocio de precalificacion activas por defecto.
-- Dashboard operativo con WebSocket para actualizacion en tiempo real.
+CrediBot es un MVP funcional que automatiza la primera atencion de solicitudes de credito por WhatsApp. El sistema recibe mensajes de clientes, procesa texto o audio, extrae datos con IA, aplica reglas de negocio controladas por codigo, guarda la informacion en PostgreSQL y permite que un asesor humano intervenga desde un dashboard.
 
-## Que hace hoy
+Componentes principales:
 
-- Recibe mensajes de WhatsApp en `POST /webhook/whatsapp`.
-- Si el usuario envia audio, se transcribe a texto y se procesa en el mismo flujo.
-- El bot puede responder en texto o en audio (nota de voz) segun configuracion.
-- Crea o reutiliza cliente/conversacion.
-- Extrae datos con IA (`full_name`, `amount`, `term_months`, `monthly_income`).
-- Guia la conversacion por estados:
-  - `START`
-  - `ASK_NAME`
-  - `ASK_AMOUNT`
-  - `ASK_TERM`
-  - `ASK_INCOME`
-  - `SHOW_RESULT`
-  - `HANDOFF`
-- Evalua reglas de negocio y entrega:
-  - `PREAPROBADO`
-  - `OBSERVADO`
-- En cada respuesta, muestra un resumen de los datos ya registrados del usuario.
-- Guarda historial completo en base de datos.
-- Permite a un asesor tomar la conversacion y responder desde dashboard.
+- Backend con FastAPI + SQLAlchemy.
+- Base de datos PostgreSQL.
+- Frontend con React + TypeScript + MUI.
+- Integracion WhatsApp mediante Twilio Sandbox.
+- IA con Groq para intencion, extraccion de datos y apoyo conversacional controlado.
+- Transcripcion de audio de WhatsApp a texto.
+- Respuesta del bot por texto o nota de voz.
+- Dashboard de asesor con WebSocket para actualizacion en tiempo real.
 
-## Modos de conversacion
+## Funcionalidades
 
-Variable: `AI_ONLY_MODE`
+1. Recepcion de mensajes de WhatsApp en `POST /webhook/whatsapp`.
+2. Recepcion y transcripcion de audios enviados por WhatsApp.
+3. Conversacion automatica para capturar datos minimos de credito.
+4. Extraccion de datos con IA: nombre, monto, plazo e ingresos.
+5. Motor de reglas para resultado preliminar.
+6. Persistencia de clientes, conversaciones, mensajes, solicitudes, analisis IA e historial de estados.
+7. Preferencia por cliente para responder en texto o audio.
+8. Generacion de notas de voz en formato OGG/Opus.
+9. Exposicion publica de audios generados en `GET /webhook/audio/{filename}`.
+10. Handoff a asesor humano cuando el cliente lo solicita.
+11. Dashboard para ver conversaciones, mensajes y datos de solicitud.
+12. Respuesta del asesor desde dashboard hacia WhatsApp.
+13. WebSocket para notificar eventos al dashboard en tiempo real.
+14. Consulta de conversaciones sin duplicar clientes: se muestra la conversacion mas reciente por cliente.
 
-- `false` (default): flujo de negocio completo (precalificacion con reglas).
-- `true`: modo conversacional IA-only (sin reglas de negocio).
+## Flujo principal
 
-## Reglas de negocio actuales
+```text
+Cliente WhatsApp
+  -> Twilio Sandbox
+  -> Webhook FastAPI
+  -> Orquestador de conversacion
+  -> IA para intencion/extraccion
+  -> Motor de reglas
+  -> PostgreSQL
+  -> Respuesta por WhatsApp
+  -> Dashboard asesor
+```
 
-En `CreditRuleEngine`:
+## Flujo funcional
 
-- Si ingreso mensual `< 600` -> `OBSERVADO`.
-- Si monto solicitado `> ingreso * 8` -> `OBSERVADO`.
-- Si plazo `> 60` meses -> `OBSERVADO`.
+1. Twilio envia el mensaje al webhook `POST /webhook/whatsapp`.
+2. El backend normaliza el telefono y obtiene o crea el cliente.
+3. Se obtiene o crea una conversacion abierta.
+4. Se obtiene o crea la solicitud de credito vigente.
+5. Si el mensaje trae audio, se descarga y se transcribe.
+6. Se guarda el mensaje inbound como `TEXT` o `AUDIO`.
+7. La IA clasifica intencion y extrae datos.
+8. El sistema guarda los datos extraidos en cliente o solicitud.
+9. Si faltan datos, se pregunta el siguiente campo requerido.
+10. Si ya estan completos los datos, se aplica el motor de reglas.
+11. Se guarda la respuesta outbound.
+12. El bot responde por texto o audio, segun la preferencia del cliente.
+13. Se emite un evento WebSocket para actualizar el dashboard.
+
+## Estados de conversacion
+
+Los estados estan definidos en `backend/app/state_machine/states.py`:
+
+- `START`
+- `ASK_NAME`
+- `ASK_AMOUNT`
+- `ASK_TERM`
+- `ASK_INCOME`
+- `SHOW_RESULT`
+- `HANDOFF`
+
+## Reglas de negocio
+
+Las reglas estan en `backend/app/services/rules/credit_rule_engine.py`.
+
+Reglas actuales:
+
+- Si `monthly_income < 600` -> `OBSERVADO`.
+- Si `amount > monthly_income * 8` -> `OBSERVADO`.
+- Si `term_months > 60` -> `OBSERVADO`.
 - Caso contrario -> `PREAPROBADO`.
+
+Punto importante: la IA no decide libremente el resultado del credito. La IA ayuda a interpretar mensajes y extraer datos, pero la decision final se calcula mediante reglas explicitas y auditables.
+
+## IA
+
+Servicios principales:
+
+- `backend/app/services/ai/ai_gateway.py`: cliente central para Groq.
+- `backend/app/services/ai/ai_orchestrator.py`: coordina intencion, extraccion y respuestas.
+- `backend/app/services/ai/intent_detector.py`: clasifica intencion.
+- `backend/app/services/ai/entity_extractor.py`: extrae datos de credito.
+- `backend/app/services/ai/response_generator.py`: pule respuestas sin cambiar datos ni reglas.
+
+Modo de operacion:
+
+```env
+AI_ONLY_MODE=false
+```
+
+Con `false`, el sistema usa el flujo de negocio completo con estados y reglas. Con `true`, responde de forma conversacional con IA sin aplicar reglas de negocio. Para el MVP de precalificacion, el modo recomendado es `false`.
+
+## Audio
+
+CrediBot soporta audio en dos direcciones:
+
+### Cliente envia audio
+
+- El webhook detecta media de tipo audio.
+- `SpeechToTextService` descarga el archivo desde Twilio.
+- Se transcribe con Groq STT o modelo local.
+- El texto transcrito entra al mismo flujo de negocio.
+
+### Bot responde audio
+
+- `TextToSpeechService` genera un MP3 con gTTS.
+- Luego lo convierte a OGG/Opus.
+- Twilio descarga el archivo desde `GET /webhook/audio/{filename}`.
+- Si falla la generacion de audio, el bot responde en texto.
+
+### Preferencia por cliente
+
+El cliente puede pedir:
+
+```text
+Quiero que me respondas en audio
+```
+
+El sistema guarda `preferred_response_type=AUDIO` en `customers`.
+
+Tambien puede volver a texto con frases como:
+
+```text
+Respondeme en texto
+No me respondas en audio
+Solo texto
+```
+
+## Dashboard del asesor
+
+Frontend ubicado en `frontend/src`.
+
+Funcionalidades:
+
+- Ver estadisticas generales.
+- Listar conversaciones.
+- Buscar por cliente o telefono.
+- Filtrar por estado.
+- Ver mensajes de una conversacion.
+- Ver datos de credito del cliente.
+- Tomar una conversacion como asesor.
+- Responder al cliente por WhatsApp.
+
+El backend devuelve solo una fila por cliente en `GET /api/dashboard/conversations`, usando la conversacion mas reciente y la solicitud mas reciente para evitar duplicados.
+
+## Respuesta del asesor por WhatsApp
+
+Endpoint:
+
+```text
+POST /api/dashboard/conversations/{id}/reply
+```
+
+Flujo:
+
+1. El asesor escribe desde el dashboard.
+2. El backend obtiene el cliente y telefono.
+3. `TwilioWhatsAppService` envia el mensaje por WhatsApp.
+4. Si Twilio confirma exito, se guarda el mensaje como `OUTBOUND`.
+5. Si Twilio falla, no se guarda como enviado y el dashboard muestra error.
+
+## Base de datos
+
+Base principal: PostgreSQL.
+
+Modelos principales:
+
+- `Customer`
+- `Conversation`
+- `Message`
+- `CreditApplication`
+- `AIAnalysis`
+- `ConversationStateHistory`
+
+Campo relevante agregado:
+
+- `customers.preferred_response_type`: guarda `TEXT` o `AUDIO`.
+
+Configuracion por defecto:
+
+```env
+DATABASE_URL=
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=credibot
+DB_USER=postgres
+DB_PASSWORD=12345678
+```
+
+Si `DATABASE_URL` esta vacio, el sistema construye la URL PostgreSQL con las variables `DB_*`.
 
 ## Variables de entorno
 
-Archivo de referencia: `backend/.env.example`
+Archivo usado por el backend:
 
-Minimas para pruebas internas:
+```text
+backend/.env
+```
+
+Archivo de referencia:
+
+```text
+backend/.env.example
+```
+
+Variables principales:
 
 ```env
-DATABASE_URL=sqlite:///./credibot.db
-GROQ_API_KEY=tu_clave_groq
+# DB
+DATABASE_URL=
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=credibot
+DB_USER=postgres
+DB_PASSWORD=12345678
+
+# IA
+GROQ_API_KEY=tu_groq_api_key
 AI_ONLY_MODE=false
+
+# Audio STT
 AUDIO_STT_ENABLED=true
 AUDIO_STT_PROVIDER=groq
-AUDIO_STT_MODEL=base
-AUDIO_STT_LANGUAGE=es
-AUDIO_STT_DEVICE=cpu
-AUDIO_STT_COMPUTE_TYPE=int8
 AUDIO_STT_GROQ_MODEL=whisper-large-v3-turbo
 AUDIO_STT_REQUEST_TIMEOUT_SECONDS=20
+
+# Audio reply
 AUDIO_REPLY_ENABLED=true
 AUDIO_REPLY_LANGUAGE=es
 AUDIO_REPLY_PUBLIC_BASE_URL=
-```
 
-`AUDIO_STT_PROVIDER` soporta:
-
-- `groq` (recomendado para webhook en tiempo real).
-- `local` (usa faster-whisper local).
-- `groq_local_fallback` (intenta Groq y si falla usa local).
-
-Para WhatsApp real (Twilio):
-
-```env
+# Twilio
 TWILIO_ENABLED=true
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 TWILIO_WHATSAPP_NUMBER=+14155238886
-TWILIO_WEBHOOK_URL=https://tu-dominio-o-ngrok/webhook/whatsapp
-AUDIO_REPLY_ENABLED=true
-AUDIO_REPLY_LANGUAGE=es
-# Opcional (si queda vacia, se deriva desde TWILIO_WEBHOOK_URL)
-AUDIO_REPLY_PUBLIC_BASE_URL=https://tu-dominio-o-ngrok
+TWILIO_WEBHOOK_URL=https://tu-ngrok/webhook/whatsapp
 ```
 
 Notas:
 
-- `TWILIO_ACCOUNT_SID` debe empezar con `AC...`.
-- No usar API Key `SK...` como `ACCOUNT_SID`.
-- Si no quieres PostgreSQL en local, usa `DATABASE_URL` con SQLite.
-- Para respuesta en audio no hace falta una API extra de TTS; se genera localmente y Twilio entrega el media.
+- `TWILIO_ACCOUNT_SID` debe empezar con `AC`.
+- No usar un SID de API Key que empieza con `SK`.
+- Para audio, `TWILIO_WEBHOOK_URL` debe ser publico porque Twilio necesita descargar el archivo OGG.
+- Si `AUDIO_REPLY_PUBLIC_BASE_URL` queda vacio, se deriva desde `TWILIO_WEBHOOK_URL`.
 
 ## Ejecucion local
 
-### Backend
+Backend:
 
-```bash
+```powershell
 cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-### Frontend
+Frontend:
 
-```bash
+```powershell
 cd frontend
-npm install
 npm run dev
 ```
 
-## Prueba por WhatsApp (Sandbox)
+## Prueba con Twilio Sandbox
 
-1. Exponer backend con ngrok al puerto `8000`.
-2. En Twilio Sandbox, configurar:
-   - `When a message comes in`: `https://<ngrok>/webhook/whatsapp`
-   - Metodo: `POST`
-3. Unir tu numero al sandbox con el `join ...` de Twilio.
-4. Enviar mensaje por WhatsApp.
+1. Levantar backend en puerto `8000`.
+2. Exponer backend con ngrok:
 
-## Respuesta del bot como nota de voz
+```powershell
+ngrok http 8000
+```
 
-1. Activar en `.env`:
-   - `AUDIO_REPLY_ENABLED=true`
-   - `AUDIO_REPLY_LANGUAGE=es`
-2. Verificar que `TWILIO_WEBHOOK_URL` apunte a una URL publica (ngrok o dominio).
-3. El backend expone audio en `GET /webhook/audio/{filename}` para que Twilio lo entregue al usuario.
-4. Si la generacion de audio falla, el sistema responde en texto automaticamente.
+3. Configurar en Twilio Sandbox:
 
-## Endpoints utiles
+```text
+When a message comes in: https://<ngrok>/webhook/whatsapp
+Metodo: POST
+```
 
-### Webhook
+4. Completar en `backend/.env`:
+
+```env
+TWILIO_WEBHOOK_URL=https://<ngrok>/webhook/whatsapp
+```
+
+5. Unir el numero al Sandbox con el codigo `join ...`.
+6. Enviar mensajes por WhatsApp.
+
+## Endpoints
+
+### Salud
+
+- `GET /`
+- `GET /health`
+
+### WhatsApp
 
 - `POST /webhook/whatsapp`
 - `GET /webhook/audio/{filename}`
 
-### Dashboard API
+### Dashboard
 
 - `GET /api/dashboard/stats`
 - `GET /api/dashboard/conversations`
@@ -157,14 +325,26 @@ npm run dev
 - `POST /api/dashboard/conversations/{id}/take`
 - `POST /api/dashboard/conversations/{id}/reply`
 
-### Salud
+### WebSocket
 
-- `GET /health`
+- `GET ws://<host>/ws/dashboard`
 
-## Pendientes reales
+## Validacion realizada
 
-- Autenticacion y autorizacion del dashboard (JWT/roles).
-- Validacion de firma del webhook de Twilio.
-- Endurecimiento de seguridad (rate limit, auditoria, manejo de secretos).
-- Despliegue productivo (infra, dominio, HTTPS, observabilidad).
-- Mejoras UX del panel y analitica avanzada.
+- Backend conecta con PostgreSQL.
+- Inicializacion de tablas ejecutada.
+- Dashboard devuelve conversaciones sin duplicar clientes.
+- Pruebas backend pasan.
+- Build frontend pasa.
+- Flujo de audio cubierto por pruebas.
+- Preferencia texto/audio cubierta por pruebas.
+- Envio del asesor por Twilio validado a nivel de servicio.
+
+## Pendientes
+
+- Completar credenciales reales de Twilio y Groq en `backend/.env`.
+- Configurar URL publica con ngrok o dominio.
+- Validar firma de webhook de Twilio.
+- Agregar autenticacion y roles al dashboard.
+- Agregar rate limiting y politicas de seguridad.
+- Preparar despliegue productivo.
