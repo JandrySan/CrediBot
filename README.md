@@ -10,12 +10,14 @@ Actualizado: 2026-07-08
 - Frontend funcional con React + TypeScript.
 - Integracion de WhatsApp por Twilio activa.
 - IA con Groq activa.
+- Transcripcion de audio de WhatsApp a texto activa (Groq STT por defecto; local opcional).
 - Reglas de negocio de precalificacion activas por defecto.
 - Dashboard operativo con WebSocket para actualizacion en tiempo real.
 
 ## Que hace hoy
 
 - Recibe mensajes de WhatsApp en `POST /webhook/whatsapp`.
+- Si el usuario envia audio, se transcribe a texto y se procesa en el mismo flujo.
 - Crea o reutiliza cliente/conversacion.
 - Extrae datos con IA (`full_name`, `amount`, `term_months`, `monthly_income`).
 - Guia la conversacion por estados:
@@ -29,6 +31,7 @@ Actualizado: 2026-07-08
 - Evalua reglas de negocio y entrega:
   - `PREAPROBADO`
   - `OBSERVADO`
+- En cada respuesta, muestra un resumen de los datos ya registrados del usuario.
 - Guarda historial completo en base de datos.
 - Permite a un asesor tomar la conversacion y responder desde dashboard.
 
@@ -58,7 +61,21 @@ Minimas para pruebas internas:
 DATABASE_URL=sqlite:///./credibot.db
 GROQ_API_KEY=tu_clave_groq
 AI_ONLY_MODE=false
+AUDIO_STT_ENABLED=true
+AUDIO_STT_PROVIDER=groq
+AUDIO_STT_MODEL=base
+AUDIO_STT_LANGUAGE=es
+AUDIO_STT_DEVICE=cpu
+AUDIO_STT_COMPUTE_TYPE=int8
+AUDIO_STT_GROQ_MODEL=whisper-large-v3-turbo
+AUDIO_STT_REQUEST_TIMEOUT_SECONDS=20
 ```
+
+`AUDIO_STT_PROVIDER` soporta:
+
+- `groq` (recomendado para webhook en tiempo real).
+- `local` (usa faster-whisper local).
+- `groq_local_fallback` (intenta Groq y si falla usa local).
 
 Para WhatsApp real (Twilio):
 
@@ -131,4 +148,3 @@ npm run dev
 - Endurecimiento de seguridad (rate limit, auditoria, manejo de secretos).
 - Despliegue productivo (infra, dominio, HTTPS, observabilidad).
 - Mejoras UX del panel y analitica avanzada.
-

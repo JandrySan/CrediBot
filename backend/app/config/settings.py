@@ -22,6 +22,15 @@ class Settings(BaseSettings):
 
     GROQ_API_KEY: str = ""
 
+    AUDIO_STT_ENABLED: bool = True
+    AUDIO_STT_PROVIDER: str = "groq"
+    AUDIO_STT_MODEL: str = "base"
+    AUDIO_STT_LANGUAGE: str = "es"
+    AUDIO_STT_DEVICE: str = "cpu"
+    AUDIO_STT_COMPUTE_TYPE: str = "int8"
+    AUDIO_STT_GROQ_MODEL: str = "whisper-large-v3-turbo"
+    AUDIO_STT_REQUEST_TIMEOUT_SECONDS: int = 20
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8"

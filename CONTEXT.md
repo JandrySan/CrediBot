@@ -9,9 +9,11 @@ CrediBot es un asistente de precalificacion de creditos por WhatsApp.
 Capacidades actuales:
 
 - Conversacion automatica por WhatsApp via Twilio.
+- Recepcion de audio por WhatsApp con transcripcion a texto.
 - Extraccion de datos con IA (Groq).
 - Flujo por estados para capturar datos minimos.
 - Evaluacion de reglas de negocio.
+- Respuestas con resumen de datos registrados del usuario.
 - Persistencia de clientes, conversaciones, mensajes y analisis IA.
 - Dashboard para seguimiento y respuesta humana.
 
@@ -43,18 +45,20 @@ CrediBot/
 1. Twilio envia un mensaje al webhook `POST /webhook/whatsapp`.
 2. Se normaliza telefono y se obtiene/crea cliente.
 3. Se obtiene/crea conversacion abierta y solicitud de credito.
-4. Se guarda mensaje inbound.
-5. Se analiza mensaje con IA:
+4. Si llega audio, se descarga desde Twilio y se transcribe.
+5. Se guarda mensaje inbound (TEXT o AUDIO).
+6. Se analiza mensaje con IA:
    - intencion
    - nombre
    - monto
    - plazo
    - ingresos
-6. Se aplica extraccion a entidades.
-7. Si faltan datos, se pregunta el siguiente campo requerido.
-8. Si ya hay datos completos, se ejecuta motor de reglas y se responde resultado.
-9. Se guarda respuesta outbound y se retorna TwiML a Twilio.
-10. Se emite evento por WebSocket para actualizar dashboard.
+7. Se aplica extraccion a entidades.
+8. Si faltan datos, se pregunta el siguiente campo requerido.
+9. Si ya hay datos completos, se ejecuta motor de reglas y se responde resultado.
+10. Se guarda respuesta outbound y se retorna TwiML a Twilio.
+11. Se emite evento por WebSocket para actualizar dashboard.
+12. Cada respuesta incluye un resumen de datos ya capturados (nombre, monto, plazo, ingresos).
 
 ## Estados de conversacion
 
@@ -117,6 +121,16 @@ DB_PASSWORD=
 GROQ_API_KEY=
 AI_ONLY_MODE=false
 
+# Audio STT
+AUDIO_STT_ENABLED=true
+AUDIO_STT_PROVIDER=groq
+AUDIO_STT_MODEL=base
+AUDIO_STT_LANGUAGE=es
+AUDIO_STT_DEVICE=cpu
+AUDIO_STT_COMPUTE_TYPE=int8
+AUDIO_STT_GROQ_MODEL=whisper-large-v3-turbo
+AUDIO_STT_REQUEST_TIMEOUT_SECONDS=20
+
 # Twilio
 TWILIO_ENABLED=true
 TWILIO_ACCOUNT_SID=AC...
@@ -146,6 +160,7 @@ WebSocket:
 - Resultado `PREAPROBADO` validado.
 - Resultado `OBSERVADO` validado.
 - Twilio autenticado y webhook devolviendo TwiML valido.
+- Webhook de audio validado (transcripcion exitosa y manejo de error).
 
 ## Brechas pendientes
 
@@ -153,4 +168,3 @@ WebSocket:
 - Login/JWT/roles en dashboard.
 - Politicas de seguridad y rate limiting.
 - Despliegue productivo y observabilidad.
-

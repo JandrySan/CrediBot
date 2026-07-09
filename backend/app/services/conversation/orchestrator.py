@@ -1,20 +1,19 @@
-from sqlalchemy.orm import Session
-import re
 from decimal import Decimal, InvalidOperation
+import re
 
+from sqlalchemy.orm import Session
+
+from app.config.settings import settings
 from app.repositories.ai_analysis_repository import AIAnalysisRepository
-from app.repositories.conversation_state_history_repository import ConversationStateHistoryRepository
-from app.repositories.customer_repository import CustomerRepository
 from app.repositories.conversation_repository import ConversationRepository
-from app.repositories.message_repository import MessageRepository
+from app.repositories.conversation_state_history_repository import ConversationStateHistoryRepository
 from app.repositories.credit_application_repository import CreditApplicationRepository
-
+from app.repositories.customer_repository import CustomerRepository
+from app.repositories.message_repository import MessageRepository
 from app.services.ai.ai_orchestrator import AIOrchestrator
 from app.services.conversation.conversation_state_service import ConversationStateService
 from app.services.conversation.credit_application_service import CreditApplicationService
-
 from app.state_machine.states import ConversationState
-from app.config.settings import settings
 
 
 class ConversationOrchestrator:
@@ -33,27 +32,50 @@ class ConversationOrchestrator:
         self.credit_service = CreditApplicationService()
 
     def handle_text_message(self, phone_number: str, text: str) -> str:
+        return self._handle_message(
+            phone_number=phone_number,
+            text=text,
+            inbound_message_type="TEXT",
+        )
+
+    def handle_audio_message(self, phone_number: str, transcript_text: str) -> str:
+        return self._handle_message(
+            phone_number=phone_number,
+            text=transcript_text,
+            inbound_message_type="AUDIO",
+        )
+
+    def _handle_message(
+        self,
+        phone_number: str,
+        text: str,
+        inbound_message_type: str = "TEXT",
+    ) -> str:
         text = (text or "").strip()
 
         customer = self.customer_repo.get_or_create(phone_number)
         conversation = self.conversation_repo.get_or_create_active(customer.id)
         application = self.application_repo.get_or_create_latest(customer.id)
 
-        self._save_message(conversation.id, "INBOUND", text)
+        self._save_message(
+            conversation_id=conversation.id,
+            direction="INBOUND",
+            content=text,
+            message_type=inbound_message_type,
+        )
 
         if settings.AI_ONLY_MODE:
             history = self._build_ai_history(conversation.id)
             if history and history[-1].get("role") == "user":
                 history = history[:-1]
+
             response = self.ai.generate_whatsapp_reply(text=text, history=history)
-            self._save_message(conversation.id, "OUTBOUND", response)
+            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
             return response
 
         if conversation.status == "HANDOFF":
-            response = (
-                "Tu mensaje fue recibido. Un asesor humano te responderá en breve."
-            )
-            self._save_message(conversation.id, "OUTBOUND", response)
+            response = "Tu mensaje fue recibido. Un asesor humano te respondera en breve."
+            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
             return response
 
         ai_data = self.ai.analyze_message(text)
@@ -62,26 +84,26 @@ class ConversationOrchestrator:
             customer=customer,
             application=application,
             text=text,
-            ai_data=ai_data
+            ai_data=ai_data,
         )
 
         self.ai_analysis_repo.save_analysis(
             conversation_id=conversation.id,
             intent=ai_data.get("intent"),
             extracted_data=ai_data,
-            model_used=self.ai.get_model_name()
+            model_used=self.ai.get_model_name(),
         )
 
         if self._is_handoff_requested(text, ai_data):
             response = self._handoff(conversation)
-            self._save_message(conversation.id, "OUTBOUND", response)
+            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
             return response
 
         self.credit_service.apply_extracted_data(
             customer=customer,
             application=application,
             data=ai_data,
-            db=self.db
+            db=self.db,
         )
 
         evaluation = self.credit_service.evaluate_if_complete(application)
@@ -90,7 +112,7 @@ class ConversationOrchestrator:
             self.application_repo.update(
                 application,
                 result=evaluation["result"],
-                reason=evaluation["reason"]
+                reason=evaluation["reason"],
             )
 
             conversation.result = evaluation["result"]
@@ -99,18 +121,16 @@ class ConversationOrchestrator:
             self._change_state(
                 conversation=conversation,
                 new_state=ConversationState.SHOW_RESULT.value,
-                reason="Solicitud completa y evaluada"
+                reason="Solicitud completa y evaluada",
             )
 
             response = self._build_result_response(evaluation)
             response = self.ai.improve_response(response)
-            self._save_message(conversation.id, "OUTBOUND", response)
+            response = self._with_user_data_summary(response, customer, application)
+            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
             return response
 
-        missing_field = self.state_service.get_next_required_field(
-            customer,
-            application
-        )
+        missing_field = self.state_service.get_next_required_field(customer, application)
 
         if missing_field:
             new_state = self.state_service.state_for_missing_field(missing_field)
@@ -118,46 +138,43 @@ class ConversationOrchestrator:
             self._change_state(
                 conversation=conversation,
                 new_state=new_state,
-                reason=f"Falta el campo requerido: {missing_field}"
+                reason=f"Falta el campo requerido: {missing_field}",
             )
 
             response = self._question_for_field(missing_field, customer)
             response = self.ai.improve_response(response)
-            self._save_message(conversation.id, "OUTBOUND", response)
+            response = self._with_user_data_summary(response, customer, application)
+            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
             return response
 
         response = (
             "Tu solicitud ya fue registrada. "
             "Puedes escribir asesor si deseas hablar con una persona."
         )
-
-        self._save_message(conversation.id, "OUTBOUND", response)
+        response = self._with_user_data_summary(response, customer, application)
+        self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
         return response
 
     def _question_for_field(self, field: str, customer) -> str:
         questions = {
             "full_name": (
-                "Hola 👋 Soy CrediBot. "
-                "Te ayudaré con una precalificación rápida de crédito. "
+                "Hola. Soy CrediBot. "
+                "Te ayudare con una precalificacion rapida de credito. "
                 "Para empezar, dime tu nombre completo."
             ),
             "amount": (
                 f"Mucho gusto, {customer.full_name}. "
-                "¿Qué monto deseas solicitar? Escribe el valor en dólares."
+                "Que monto deseas solicitar? Escribe el valor en dolares."
             ),
-            "term_months": (
-                "Perfecto. ¿En cuántos meses deseas pagar el crédito?"
-            ),
-            "monthly_income": (
-                "Gracias. Ahora dime tus ingresos mensuales aproximados en dólares."
-            ),
+            "term_months": "Perfecto. En cuantos meses deseas pagar el credito?",
+            "monthly_income": "Gracias. Ahora dime tus ingresos mensuales aproximados en dolares.",
         }
 
         return questions[field]
 
     def _build_result_response(self, evaluation: dict) -> str:
         return (
-            f"Resultado de precalificación: {evaluation['result']}.\n\n"
+            f"Resultado de precalificacion: {evaluation['result']}.\n\n"
             f"Motivo: {evaluation['reason']}\n\n"
             "Este resultado es preliminar. "
             "Puedes escribir asesor en cualquier momento para hablar con una persona."
@@ -167,16 +184,13 @@ class ConversationOrchestrator:
         self._change_state(
             conversation=conversation,
             new_state=ConversationState.HANDOFF.value,
-            reason="Usuario solicitó hablar con asesor humano"
+            reason="Usuario solicito hablar con asesor humano",
         )
 
         conversation.status = "HANDOFF"
         self.db.commit()
 
-        return (
-            "Entendido. Te voy a derivar con un asesor humano. "
-            "Por favor espera un momento."
-        )
+        return "Entendido. Te voy a derivar con un asesor humano. Por favor espera un momento."
 
     def _is_handoff_requested(self, text: str, ai_data: dict) -> bool:
         if ai_data.get("intent") == "asesor":
@@ -188,20 +202,24 @@ class ConversationOrchestrator:
             for word in ["asesor", "humano", "persona", "agente", "ejecutivo"]
         )
 
-    def _save_message(self, conversation_id: int, direction: str, content: str):
+    def _save_message(
+        self,
+        conversation_id: int,
+        direction: str,
+        content: str,
+        message_type: str = "TEXT",
+    ):
         self.message_repo.save_message(
             conversation_id=conversation_id,
             direction=direction,
             content=content,
-            message_type="TEXT"
+            message_type=message_type,
         )
 
     def _change_state(self, conversation, new_state: str, reason: str):
-        conversation, previous_state, changed = (
-            self.conversation_repo.update_state_if_changed(
-                conversation,
-                new_state
-            )
+        conversation, previous_state, changed = self.conversation_repo.update_state_if_changed(
+            conversation,
+            new_state,
         )
 
         if changed:
@@ -209,13 +227,16 @@ class ConversationOrchestrator:
                 conversation_id=conversation.id,
                 previous_state=previous_state,
                 new_state=new_state,
-                reason=reason
+                reason=reason,
             )
 
         return conversation
 
     def _build_ai_history(self, conversation_id: int, limit: int = 8) -> list[dict]:
-        rows = self.message_repo.get_recent_messages(conversation_id=conversation_id, limit=limit)
+        rows = self.message_repo.get_recent_messages(
+            conversation_id=conversation_id,
+            limit=limit,
+        )
         history: list[dict] = []
 
         for row in reversed(rows):
@@ -227,7 +248,14 @@ class ConversationOrchestrator:
 
         return history
 
-    def _enrich_extracted_data(self, conversation, customer, application, text: str, ai_data: dict) -> dict:
+    def _enrich_extracted_data(
+        self,
+        conversation,
+        customer,
+        application,
+        text: str,
+        ai_data: dict,
+    ) -> dict:
         enriched = dict(ai_data or {})
 
         expected_field = self._expected_field(conversation, customer, application)
@@ -278,13 +306,13 @@ class ConversationOrchestrator:
         if re.search(r"\d", value):
             return None
 
-        cleaned = re.sub(r"[^A-Za-zÁÉÍÓÚáéíóúÑñ\s]", " ", value)
+        cleaned = re.sub(r"[^A-Za-z\s]", " ", value)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
         if len(cleaned) < 2:
             return None
 
-        blacklist = {"hola", "buenas", "gracias", "ok", "credito", "crédito"}
+        blacklist = {"hola", "buenas", "gracias", "ok", "credito"}
         if cleaned.lower() in blacklist:
             return None
 
@@ -320,7 +348,40 @@ class ConversationOrchestrator:
         if number <= 0:
             return None
 
-        if "año" in value or "anos" in value or "años" in value or "ano" in value:
+        if any(token in value for token in ["ano", "anos", "year", "years"]):
             return number * 12
 
         return number
+
+    def _with_user_data_summary(self, response: str, customer, application) -> str:
+        summary_lines: list[str] = []
+
+        if customer.full_name:
+            summary_lines.append(f"- Nombre: {customer.full_name}")
+
+        if application.amount is not None:
+            summary_lines.append(f"- Monto solicitado: {self._format_currency(application.amount)}")
+
+        if application.term_months is not None:
+            summary_lines.append(f"- Plazo: {application.term_months} meses")
+
+        if application.monthly_income is not None:
+            summary_lines.append(f"- Ingresos mensuales: {self._format_currency(application.monthly_income)}")
+
+        if not summary_lines:
+            return response
+
+        return (
+            f"{response}\n\n"
+            "Datos que registre hasta ahora:\n"
+            f"{chr(10).join(summary_lines)}"
+        )
+
+    def _format_currency(self, value) -> str:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+
+        formatted = f"{number:,.2f}"
+        return f"${formatted}"
