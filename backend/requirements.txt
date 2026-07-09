@@ -17,6 +17,8 @@ twilio
 groq
 
 faster-whisper
+gTTS
+av
 
 python-multipart
 

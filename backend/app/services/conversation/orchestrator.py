@@ -124,9 +124,8 @@ class ConversationOrchestrator:
                 reason="Solicitud completa y evaluada",
             )
 
-            response = self._build_result_response(evaluation)
-            response = self.ai.improve_response(response)
-            response = self._with_user_data_summary(response, customer, application)
+            response = self._build_result_response(evaluation, customer, application)
+            response = self._polish_response(response, user_text=text, use_ai=True)
             self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
             return response
 
@@ -141,43 +140,76 @@ class ConversationOrchestrator:
                 reason=f"Falta el campo requerido: {missing_field}",
             )
 
-            response = self._question_for_field(missing_field, customer)
-            response = self.ai.improve_response(response)
-            response = self._with_user_data_summary(response, customer, application)
+            response = self._question_for_field(missing_field, customer, application)
+            response = self._polish_response(response, user_text=text, use_ai=False)
             self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
             return response
 
-        response = (
-            "Tu solicitud ya fue registrada. "
-            "Puedes escribir asesor si deseas hablar con una persona."
-        )
-        response = self._with_user_data_summary(response, customer, application)
+        response = self._build_already_registered_response(customer, application)
+        response = self._polish_response(response, user_text=text, use_ai=True)
         self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
         return response
 
-    def _question_for_field(self, field: str, customer) -> str:
-        questions = {
-            "full_name": (
-                "Hola. Soy CrediBot. "
-                "Te ayudare con una precalificacion rapida de credito. "
-                "Para empezar, dime tu nombre completo."
-            ),
-            "amount": (
-                f"Mucho gusto, {customer.full_name}. "
-                "Que monto deseas solicitar? Escribe el valor en dolares."
-            ),
-            "term_months": "Perfecto. En cuantos meses deseas pagar el credito?",
-            "monthly_income": "Gracias. Ahora dime tus ingresos mensuales aproximados en dolares.",
-        }
+    def _question_for_field(self, field: str, customer, application) -> str:
+        if field == "full_name":
+            return (
+                "Hola, que gusto saludarte. Soy CrediBot y te ayudare con tu precalificacion de credito. "
+                "Para comenzar, me compartes tu nombre completo?"
+            )
 
-        return questions[field]
+        if field == "amount":
+            if customer.full_name:
+                return (
+                    f"Es un gusto hablar contigo, {customer.full_name}. "
+                    "Para continuar con tu precalificacion, que monto deseas solicitar en dolares?"
+                )
 
-    def _build_result_response(self, evaluation: dict) -> str:
+            return "Perfecto, para avanzar dime que monto deseas solicitar en dolares."
+
+        if field == "term_months":
+            if application.amount is not None:
+                return (
+                    f"Excelente, ya tengo registrado un monto de {self._format_currency(application.amount)}. "
+                    "Ahora cuentame en cuantos meses te gustaria pagarlo."
+                )
+
+            return "Perfecto, en cuantos meses te gustaria pagar el credito?"
+
+        if field == "monthly_income":
+            details = []
+            if application.amount is not None:
+                details.append(f"un monto de {self._format_currency(application.amount)}")
+            if application.term_months is not None:
+                details.append(f"un plazo de {application.term_months} meses")
+
+            if details:
+                detail_text = self._human_join(details)
+                return (
+                    f"Super, ya tengo {detail_text}. "
+                    "Para cerrar tu precalificacion, cual es tu ingreso mensual aproximado en dolares?"
+                )
+
+            return "Gracias. Para cerrar tu precalificacion, cual es tu ingreso mensual aproximado en dolares?"
+
+        return "Cuentame un poco mas para poder ayudarte mejor con tu solicitud."
+
+    def _build_result_response(self, evaluation: dict, customer, application) -> str:
+        profile_details = self._profile_snapshot(customer, application)
+        result_label = self._human_result_label(evaluation.get("result"))
+        reason = (evaluation.get("reason") or "").strip()
+
+        if profile_details:
+            return (
+                f"Listo, con la informacion que me compartiste ({profile_details}), "
+                f"tu resultado preliminar es {result_label}. "
+                f"Motivo: {reason}. "
+                "Si deseas, tambien puedo derivarte con un asesor humano."
+            )
+
         return (
-            f"Resultado de precalificacion: {evaluation['result']}.\n\n"
-            f"Motivo: {evaluation['reason']}\n\n"
-            "Este resultado es preliminar. "
-            "Puedes escribir asesor en cualquier momento para hablar con una persona."
+            f"Listo, tu resultado preliminar es {result_label}. "
+            f"Motivo: {reason}. "
+            "Si deseas, tambien puedo derivarte con un asesor humano."
         )
 
     def _handoff(self, conversation) -> str:
@@ -353,29 +385,98 @@ class ConversationOrchestrator:
 
         return number
 
-    def _with_user_data_summary(self, response: str, customer, application) -> str:
-        summary_lines: list[str] = []
-
-        if customer.full_name:
-            summary_lines.append(f"- Nombre: {customer.full_name}")
-
-        if application.amount is not None:
-            summary_lines.append(f"- Monto solicitado: {self._format_currency(application.amount)}")
-
-        if application.term_months is not None:
-            summary_lines.append(f"- Plazo: {application.term_months} meses")
-
-        if application.monthly_income is not None:
-            summary_lines.append(f"- Ingresos mensuales: {self._format_currency(application.monthly_income)}")
-
-        if not summary_lines:
-            return response
+    def _build_already_registered_response(self, customer, application) -> str:
+        profile_details = self._profile_snapshot(customer, application)
+        if profile_details:
+            return (
+                f"Tu solicitud ya fue registrada con estos datos: {profile_details}. "
+                "Si quieres continuar o ajustar algo, lo revisamos juntos. "
+                "Tambien puedes escribir asesor para hablar con una persona."
+            )
 
         return (
-            f"{response}\n\n"
-            "Datos que registre hasta ahora:\n"
-            f"{chr(10).join(summary_lines)}"
+            "Tu solicitud ya fue registrada. "
+            "Si quieres, tambien puedo derivarte con un asesor humano."
         )
+
+    def _profile_snapshot(self, customer, application) -> str:
+        details: list[str] = []
+
+        if customer.full_name:
+            details.append(f"nombre {customer.full_name}")
+
+        if application.amount is not None:
+            details.append(f"monto de {self._format_currency(application.amount)}")
+
+        if application.term_months is not None:
+            details.append(f"plazo de {application.term_months} meses")
+
+        if application.monthly_income is not None:
+            details.append(f"ingresos mensuales de {self._format_currency(application.monthly_income)}")
+
+        return self._human_join(details)
+
+    def _human_result_label(self, result: str | None) -> str:
+        normalized = (result or "").strip().upper()
+        labels = {
+            "PREAPROBADO": "preaprobado",
+            "OBSERVADO": "observado",
+            "RECHAZADO": "rechazado",
+        }
+
+        if normalized in labels:
+            return labels[normalized]
+
+        return normalized.lower() if normalized else "sin resultado"
+
+    def _human_join(self, items: list[str]) -> str:
+        clean_items = [item.strip() for item in items if (item or "").strip()]
+        if not clean_items:
+            return ""
+
+        if len(clean_items) == 1:
+            return clean_items[0]
+
+        if len(clean_items) == 2:
+            return f"{clean_items[0]} y {clean_items[1]}"
+
+        return f"{', '.join(clean_items[:-1])} y {clean_items[-1]}"
+
+    def _polish_response(self, response: str, user_text: str, use_ai: bool = True) -> str:
+        final_response = (response or "").strip()
+
+        if use_ai:
+            improved = self.ai.improve_response(
+                message=response,
+                last_user_message=user_text,
+            )
+            final_response = (improved or response or "").strip()
+
+        return self._sanitize_response(final_response, user_text=user_text)
+
+    def _sanitize_response(self, response: str, user_text: str) -> str:
+        cleaned = (response or "").strip()
+        if not cleaned:
+            return cleaned
+
+        normalized_user = (user_text or "").lower()
+        user_thanked = any(
+            token in normalized_user
+            for token in ["gracias", "agradezco", "thank you", "thanks"]
+        )
+
+        if not user_thanked:
+            cleaned = re.sub(
+                r"^\s*(de nada|no hay de que|con gusto|a la orden|encantado de ayudarte|un gusto ayudarte)[\s,:\-\.!]*",
+                "",
+                cleaned,
+                flags=re.IGNORECASE,
+            ).strip()
+
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+        return cleaned.strip()
 
     def _format_currency(self, value) -> str:
         try:

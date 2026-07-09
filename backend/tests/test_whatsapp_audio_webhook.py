@@ -13,6 +13,9 @@ class TestWhatsAppAudioWebhook:
         ), patch(
             "app.api.whatsapp.ConversationOrchestrator.handle_audio_message",
             return_value="respuesta por audio",
+        ), patch(
+            "app.api.whatsapp.TextToSpeechService.generate_voice_note",
+            return_value={"success": False, "message": "tts desactivado en test"},
         ) as audio_handler:
             with TestClient(app) as client:
                 response = client.post(
@@ -39,6 +42,9 @@ class TestWhatsAppAudioWebhook:
         ), patch(
             "app.api.whatsapp.ConversationOrchestrator.handle_audio_message",
             return_value="no debe ejecutarse",
+        ), patch(
+            "app.api.whatsapp.TextToSpeechService.generate_voice_note",
+            return_value={"success": False, "message": "tts desactivado en test"},
         ) as audio_handler:
             with TestClient(app) as client:
                 response = client.post(
@@ -57,3 +63,52 @@ class TestWhatsAppAudioWebhook:
         assert response.status_code == 200
         assert "no pude transcribirlo" in response.text.lower()
         assert not audio_handler.called
+
+    def test_text_message_returns_media_when_tts_is_available(self):
+        with patch(
+            "app.api.whatsapp.ConversationOrchestrator.handle_text_message",
+            return_value="respuesta en voz",
+        ), patch(
+            "app.api.whatsapp.TextToSpeechService.generate_voice_note",
+            return_value={
+                "success": True,
+                "media_url": "https://example.com/webhook/audio/sample.ogg",
+            },
+        ):
+            with TestClient(app) as client:
+                response = client.post(
+                    "/webhook/whatsapp",
+                    data={
+                        "From": "whatsapp:+593000000003",
+                        "Body": "hola bot",
+                        "ProfileName": "Test",
+                        "MessageType": "text",
+                    },
+                )
+
+        assert response.status_code == 200
+        assert "<Media>https://example.com/webhook/audio/sample.ogg</Media>" in response.text
+        assert "respuesta en voz" not in response.text
+
+    def test_text_message_falls_back_to_text_when_tts_fails(self):
+        with patch(
+            "app.api.whatsapp.ConversationOrchestrator.handle_text_message",
+            return_value="respuesta en texto",
+        ), patch(
+            "app.api.whatsapp.TextToSpeechService.generate_voice_note",
+            return_value={"success": False, "message": "tts apagado"},
+        ):
+            with TestClient(app) as client:
+                response = client.post(
+                    "/webhook/whatsapp",
+                    data={
+                        "From": "whatsapp:+593000000004",
+                        "Body": "hola bot",
+                        "ProfileName": "Test",
+                        "MessageType": "text",
+                    },
+                )
+
+        assert response.status_code == 200
+        assert "respuesta en texto" in response.text
+        assert "<Media>" not in response.text

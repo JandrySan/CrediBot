@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     AUDIO_STT_GROQ_MODEL: str = "whisper-large-v3-turbo"
     AUDIO_STT_REQUEST_TIMEOUT_SECONDS: int = 20
 
+    AUDIO_REPLY_ENABLED: bool = False
+    AUDIO_REPLY_LANGUAGE: str = "es"
+    AUDIO_REPLY_PUBLIC_BASE_URL: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8"

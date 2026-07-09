@@ -10,6 +10,7 @@ Capacidades actuales:
 
 - Conversacion automatica por WhatsApp via Twilio.
 - Recepcion de audio por WhatsApp con transcripcion a texto.
+- Respuesta de bot por WhatsApp como nota de voz (audio OGG/Opus).
 - Extraccion de datos con IA (Groq).
 - Flujo por estados para capturar datos minimos.
 - Evaluacion de reglas de negocio.
@@ -56,7 +57,7 @@ CrediBot/
 7. Se aplica extraccion a entidades.
 8. Si faltan datos, se pregunta el siguiente campo requerido.
 9. Si ya hay datos completos, se ejecuta motor de reglas y se responde resultado.
-10. Se guarda respuesta outbound y se retorna TwiML a Twilio.
+10. La respuesta outbound se envia como texto o audio (segun configuracion) y se retorna TwiML a Twilio.
 11. Se emite evento por WebSocket para actualizar dashboard.
 12. Cada respuesta incluye un resumen de datos ya capturados (nombre, monto, plazo, ingresos).
 
@@ -131,6 +132,11 @@ AUDIO_STT_COMPUTE_TYPE=int8
 AUDIO_STT_GROQ_MODEL=whisper-large-v3-turbo
 AUDIO_STT_REQUEST_TIMEOUT_SECONDS=20
 
+# Audio reply (bot -> voice note)
+AUDIO_REPLY_ENABLED=true
+AUDIO_REPLY_LANGUAGE=es
+AUDIO_REPLY_PUBLIC_BASE_URL=
+
 # Twilio
 TWILIO_ENABLED=true
 TWILIO_ACCOUNT_SID=AC...
@@ -139,6 +145,8 @@ TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 TWILIO_WHATSAPP_NUMBER=+14155238886
 TWILIO_WEBHOOK_URL=https://.../webhook/whatsapp
 ```
+
+Si `AUDIO_REPLY_PUBLIC_BASE_URL` queda vacio, se deriva automaticamente desde `TWILIO_WEBHOOK_URL`.
 
 ## Dashboard
 

@@ -20,8 +20,11 @@ class AIOrchestrator:
             **entities,
         }
 
-    def improve_response(self, message: str) -> str:
-        return self.response_generator.generate(message)
+    def improve_response(self, message: str, last_user_message: str = "") -> str:
+        return self.response_generator.generate(
+            base_message=message,
+            last_user_message=last_user_message,
+        )
 
     def generate_whatsapp_reply(self, text: str, history: list[dict] | None = None) -> str:
         messages: list[dict] = [

@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, Form
-from fastapi.responses import PlainTextResponse
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 from twilio.twiml.messaging_response import MessagingResponse
 
 from app.database.session import get_db
 from app.services.audio.speech_to_text import SpeechToTextService
+from app.services.audio.text_to_speech import TextToSpeechService
 from app.services.conversation.orchestrator import ConversationOrchestrator
 from app.services.websocket.connection_manager import manager
 
@@ -16,6 +19,22 @@ def _safe_int(value: str | int | None, default: int = 0) -> int:
         return int(value) if value is not None else default
     except (TypeError, ValueError):
         return default
+
+
+@router.get("/audio/{filename}")
+async def serve_generated_audio(filename: str):
+    # Block path traversal attempts and only expose files from the expected folder.
+    if Path(filename).name != filename:
+        raise HTTPException(status_code=400, detail="Nombre de archivo invalido")
+
+    tts_service = TextToSpeechService()
+    audio_dir = tts_service.output_dir.resolve()
+    file_path = (audio_dir / filename).resolve()
+
+    if file_path.parent != audio_dir or not file_path.exists():
+        raise HTTPException(status_code=404, detail="Audio no encontrado")
+
+    return FileResponse(str(file_path), media_type="audio/ogg", filename=filename)
 
 
 @router.post("/whatsapp")
@@ -94,7 +113,14 @@ async def receive_whatsapp_message(
         )
 
     twilio_response = MessagingResponse()
-    twilio_response.message(response_text)
+    tts_result = TextToSpeechService().generate_voice_note(response_text)
+
+    is_audio_reply = bool(tts_result.get("success")) and bool(tts_result.get("media_url"))
+    if is_audio_reply:
+        reply_message = twilio_response.message()
+        reply_message.media(tts_result["media_url"])
+    else:
+        twilio_response.message(response_text)
 
     await manager.broadcast(
         {
@@ -103,6 +129,10 @@ async def receive_whatsapp_message(
             "message": incoming_text,
             "message_type": incoming_message_type,
             "profile_name": ProfileName,
+            "bot_response_type": "AUDIO" if is_audio_reply else "TEXT",
+            "bot_response": response_text,
+            "bot_media_url": tts_result.get("media_url", ""),
+            "bot_audio_error": tts_result.get("message", ""),
         }
     )
 

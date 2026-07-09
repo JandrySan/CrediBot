@@ -24,6 +24,7 @@ alembic/versions/
 
 *.log
 *.db
+backend/work/
 
 # OS
 
