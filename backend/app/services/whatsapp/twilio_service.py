@@ -11,23 +11,42 @@ class TwilioWhatsAppService:
             and settings.TWILIO_ACCOUNT_SID
             and settings.TWILIO_AUTH_TOKEN
         )
+        self.client = None
+        self._config_error = None
 
-        if self.enabled:
-            self.client = Client(
-                settings.TWILIO_ACCOUNT_SID,
-                settings.TWILIO_AUTH_TOKEN
+        if not self.enabled:
+            return
+
+        sid = settings.TWILIO_ACCOUNT_SID.strip()
+        if sid.startswith("SK"):
+            self.enabled = False
+            self._config_error = (
+                "TWILIO_ACCOUNT_SID parece ser una API Key (SK...). "
+                "Debes usar el Account SID (empieza con AC...) desde la consola de Twilio."
             )
-        else:
-            self.client = None
+            return
+
+        if not sid.startswith("AC"):
+            self.enabled = False
+            self._config_error = (
+                "TWILIO_ACCOUNT_SID no es válido. "
+                "Debe empezar con AC... (Account SID de tu consola Twilio)."
+            )
+            return
+
+        self._config_error = None
+        self.client = Client(sid, settings.TWILIO_AUTH_TOKEN)
 
     def send_message(self, to: str, body: str):
         if not self.enabled:
             return {
                 "success": False,
-                "message": "Twilio está desactivado"
+                "message": self._config_error or (
+                    "Twilio está desactivado. Configura TWILIO_ENABLED=true y las credenciales en .env"
+                ),
             }
 
-        from_number = self._get_from_number()
+        from_number = self._normalize_phone_number(self._get_from_number())
         to_number = self._normalize_phone_number(to)
 
         if not from_number:
@@ -54,10 +73,22 @@ class TwilioWhatsAppService:
                 "sid": message.sid
             }
         except TwilioRestException as exc:
+            error_code = getattr(exc, "code", None)
+            if error_code == 20003:
+                return {
+                    "success": False,
+                    "message": (
+                        "Credenciales de Twilio inválidas. Verifica que TWILIO_ACCOUNT_SID "
+                        "empiece con AC... y que TWILIO_AUTH_TOKEN sea el Auth Token principal "
+                        "de tu cuenta (no una API Key SK...)."
+                    ),
+                    "error_code": error_code,
+                }
+
             return {
                 "success": False,
                 "message": str(exc),
-                "error_code": getattr(exc, "code", None)
+                "error_code": error_code,
             }
         except Exception as exc:  # pragma: no cover - defensive fallback
             return {
@@ -82,9 +113,10 @@ class TwilioWhatsAppService:
             value = value.split(":", 1)[1]
 
         if value.startswith("+"):
-            return value
+            e164 = value
+        elif value.startswith("00"):
+            e164 = f"+{value[2:]}"
+        else:
+            e164 = f"+{value}"
 
-        if value.startswith("00"):
-            return f"+{value[2:]}"
-
-        return f"+{value}"
+        return f"whatsapp:{e164}"

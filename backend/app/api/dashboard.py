@@ -174,9 +174,17 @@ async def reply_conversation(
         "message": message
     })
 
+    whatsapp_sent = twilio_result.get("success", False)
+
     return {
-        "success": True,
-        "message": "Respuesta enviada por asesor",
+        "success": whatsapp_sent,
+        "message": (
+            "Respuesta enviada por asesor"
+            if whatsapp_sent
+            else twilio_result.get("message", "No se pudo enviar el mensaje por WhatsApp")
+        ),
         "conversation_id": conversation.id,
+        "message_saved": True,
+        "whatsapp_sent": whatsapp_sent,
         "twilio": twilio_result
     }
