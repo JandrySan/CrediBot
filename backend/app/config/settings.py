@@ -4,6 +4,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     APP_NAME: str = "CrediBot"
     DEBUG: bool = True
+    AI_ONLY_MODE: bool = False
+    DATABASE_URL: str = ""
 
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
@@ -27,6 +29,9 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
+        if self.DATABASE_URL:
+            return self.DATABASE_URL
+
         return (
             f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"

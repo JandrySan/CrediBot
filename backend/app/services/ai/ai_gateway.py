@@ -53,6 +53,22 @@ class AIGateway:
 
         except Exception:
             return ""
+
+    def generate_chat(self, messages: list[dict], temperature: float = 0.4) -> str:
+        if not self.client:
+            return ""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+            )
+
+            return response.choices[0].message.content.strip()
+
+        except Exception:
+            return ""
         
     def get_model_name(self) -> str:
         return self.model

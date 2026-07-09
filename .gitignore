@@ -23,6 +23,7 @@ alembic/versions/
 # Logs
 
 *.log
+*.db
 
 # OS
 

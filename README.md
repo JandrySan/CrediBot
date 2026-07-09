@@ -1,535 +1,134 @@
+# CrediBot
 
-# CrediBot - Estado del Proyecto
+Asistente de precalificacion de creditos por WhatsApp.
 
-## Información General
+Actualizado: 2026-07-08
 
-**Nombre del proyecto:** CrediBot
+## Estado real del proyecto
 
-**Objetivo:**
+- Backend funcional con FastAPI + SQLAlchemy.
+- Frontend funcional con React + TypeScript.
+- Integracion de WhatsApp por Twilio activa.
+- IA con Groq activa.
+- Reglas de negocio de precalificacion activas por defecto.
+- Dashboard operativo con WebSocket para actualizacion en tiempo real.
 
-CrediBot es un asistente inteligente para la precalificación de créditos mediante WhatsApp. El sistema utiliza Inteligencia Artificial para mantener conversaciones con los clientes, recopilar información financiera, evaluar reglas de negocio y permitir la intervención de un asesor humano cuando sea necesario.
+## Que hace hoy
 
----
+- Recibe mensajes de WhatsApp en `POST /webhook/whatsapp`.
+- Crea o reutiliza cliente/conversacion.
+- Extrae datos con IA (`full_name`, `amount`, `term_months`, `monthly_income`).
+- Guia la conversacion por estados:
+  - `START`
+  - `ASK_NAME`
+  - `ASK_AMOUNT`
+  - `ASK_TERM`
+  - `ASK_INCOME`
+  - `SHOW_RESULT`
+  - `HANDOFF`
+- Evalua reglas de negocio y entrega:
+  - `PREAPROBADO`
+  - `OBSERVADO`
+- Guarda historial completo en base de datos.
+- Permite a un asesor tomar la conversacion y responder desde dashboard.
 
-# Arquitectura
+## Modos de conversacion
 
-El proyecto está dividido en dos grandes módulos:
+Variable: `AI_ONLY_MODE`
 
-```
-CrediBot
-│
-├── backend (FastAPI)
-│
-├── frontend (React + TypeScript)
-│
-└── PostgreSQL
-```
+- `false` (default): flujo de negocio completo (precalificacion con reglas).
+- `true`: modo conversacional IA-only (sin reglas de negocio).
 
-Tecnologías utilizadas:
+## Reglas de negocio actuales
 
-- FastAPI
-- SQLAlchemy
-- PostgreSQL
-- React
-- TypeScript
-- Material UI
-- React Query
-- WebSockets
-- Groq API (IA)
-- Twilio WhatsApp (✅ integrado)
-- Ngrok (para tunneling local)
+En `CreditRuleEngine`:
 
----
+- Si ingreso mensual `< 600` -> `OBSERVADO`.
+- Si monto solicitado `> ingreso * 8` -> `OBSERVADO`.
+- Si plazo `> 60` meses -> `OBSERVADO`.
+- Caso contrario -> `PREAPROBADO`.
 
-# Backend implementado
+## Variables de entorno
 
-## Base de datos
+Archivo de referencia: `backend/.env.example`
 
-Se encuentran implementadas las siguientes entidades:
+Minimas para pruebas internas:
 
-- Customer
-- Conversation
-- Message
-- CreditApplication
-- AIAnalysis
-- ConversationStateHistory
-
----
-
-## Máquina de estados
-
-Estados implementados:
-
-- START
-- ASK_NAME
-- ASK_AMOUNT
-- ASK_TERM
-- ASK_INCOME
-- SHOW_RESULT
-- HANDOFF
-
-La conversación cambia automáticamente de estado según la información recopilada.
-
----
-
-## Inteligencia Artificial
-
-Implementado:
-
-- Análisis de intención
-- Extracción de datos
-- Mejora de respuestas
-- Clasificación de mensajes
-
-Actualmente se utiliza:
-
-Groq API
-
----
-
-## Reglas de negocio
-
-Se implementó un motor de precalificación.
-
-Actualmente valida:
-
-- monto solicitado
-- plazo
-- ingresos mensuales
-
-Resultados posibles:
-
-- PREAPROBADO
-- OBSERVADO
-
----
-
-## Persistencia
-
-Se almacenan:
-
-Clientes
-
-Conversaciones
-
-Mensajes
-
-Análisis de IA
-
-Resultados del crédito
-
-Historial de estados
-
----
-
-## Dashboard API
-
-Endpoints implementados
-
-GET
-
-```
-/api/dashboard/stats
+```env
+DATABASE_URL=sqlite:///./credibot.db
+GROQ_API_KEY=tu_clave_groq
+AI_ONLY_MODE=false
 ```
 
-Obtiene estadísticas generales.
+Para WhatsApp real (Twilio):
 
----
-
-GET
-
-```
-/api/dashboard/conversations
-```
-
-Lista conversaciones.
-
----
-
-GET
-
-```
-/api/dashboard/conversations/{id}/messages
+```env
+TWILIO_ENABLED=true
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+TWILIO_WHATSAPP_NUMBER=+14155238886
+TWILIO_WEBHOOK_URL=https://tu-dominio-o-ngrok/webhook/whatsapp
 ```
 
-Obtiene el historial del chat.
+Notas:
 
----
+- `TWILIO_ACCOUNT_SID` debe empezar con `AC...`.
+- No usar API Key `SK...` como `ACCOUNT_SID`.
+- Si no quieres PostgreSQL en local, usa `DATABASE_URL` con SQLite.
 
-POST
+## Ejecucion local
 
-```
-/api/dashboard/conversations/{id}/take
-```
+### Backend
 
-Permite que un asesor tome la conversación.
-
----
-
-POST
-
-```
-/api/dashboard/conversations/{id}/reply
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Permite responder desde el panel del asesor.
-
-- Guarda el mensaje en la base de datos
-- Envía el mensaje a través de Twilio WhatsApp
-- Actualiza el chat en tiempo real para el cliente y el asesor
-
----
-
-## Integración Twilio
-
-✅ **Estado: Implementada y funcionando**
-
-### Webhook de entrada
-- **Endpoint:** POST /webhook/whatsapp
-- **Recibe:** Mensajes de WhatsApp desde Twilio
-- **Procesa:** El mensaje a través del orquestador de conversación
-- **Responde:** Con TwiML válido para Twilio
-
-### Servicio de envío
-- **Normalización:** Convierte números al formato E.164 (ej: +3001234567)
-- **Fallback:** Soporta tanto TWILIO_WHATSAPP_FROM como TWILIO_WHATSAPP_NUMBER
-- **Manejo de errores:** Captura excepciones de Twilio sin romper el flujo
-
-### Configuración requerida
-Las siguientes variables deben estar en `.env`:
-- TWILIO_ENABLED=true
-- TWILIO_ACCOUNT_SID=tu_sid
-- TWILIO_AUTH_TOKEN=tu_token
-- TWILIO_WHATSAPP_FROM=whatsapp:+1415XXXXXXX
-- TWILIO_WHATSAPP_NUMBER=+1415XXXXXXX
-- TWILIO_WEBHOOK_URL=https://tu-tunel/webhook/whatsapp
-
----
-
-# Frontend implementado
-
-Framework
-
-React + TypeScript
-
----
-
-## Dashboard
-
-Implementado
-
-✔ Estadísticas
-
-✔ Conversaciones
-
-✔ Chat
-
-✔ Información del cliente
-
-✔ Respuesta del asesor
-
-✔ Tomar conversación
-
----
-
-## Componentes
-
-Layout
-
-Sidebar
-
-TopBar
-
-Dashboard
-
----
-
-Conversaciones
-
-ConversationList
-
-ConversationItem
-
-ConversationChat
-
-ConversationInfoPanel
-
-ReplyBox
-
----
-
-Hooks
-
-useDashboard
-
-useConversations
-
-useConversationMessages
-
-useDashboardSocket
-
-useTakeConversation
-
-useReplyConversation
-
----
-
-Servicios
-
-conversation.service.ts
-
-dashboard.service.ts
-
----
-
-# Funcionalidades implementadas
-
-✔ Recepción de mensajes
-
-✔ Conversación mediante IA
-
-✔ Extracción automática de datos
-
-✔ Persistencia
-
-✔ Precalificación
-
-✔ Dashboard administrativo
-
-✔ Chat estilo WhatsApp
-
-✔ Información del cliente
-
-✔ Derivación a asesor
-
-✔ Respuesta manual desde el panel
-
-✔ WebSockets
-
-✔ Actualización en tiempo real
-
----
-
-# Diseño
-
-Actualmente se mejoró:
-
-- Theme
-- Sidebar
-- Dashboard
-- Cards
-- Lista de conversaciones
-
-Pendiente:
-
-- mejorar Chat
-- mejorar panel derecho
-- modo oscuro
-
----
-
-# Estado actual
-
-Backend
-
-90 %
-
-Frontend
-
-75 %
-
-IA
-
-90 %
-
-Dashboard
-
-85 %
-
-Tiempo real
-
-100 %
-
----
-
-# Pendiente
-
-## Integración WhatsApp
-
-Pendiente configurar:
-
-Twilio Sandbox
-
-Ngrok
-
-Webhook
-
-Variables de entorno
-
-Envío real de mensajes
-
----
-
-## Audio
-
-Pendiente
-
-Recepción
-
-Transcripción
-
-Respuesta mediante voz
-
----
-
-## Analítica
-
-Pendiente
-
-Gráficas
-
-Indicadores
-
-Reportes
-
-Embudo
-
----
-
-## Exportaciones
-
-Pendiente
-
-PDF
-
-Excel
-
-CSV
-
----
-
-## Seguridad
-
-Pendiente
-
-Login
-
-Roles
-
-JWT
-
-Administradores
-
-Asesores
-
----
-
-## Producción
-
-Pendiente
-
-Docker
-
-Render / Railway
-
-Dominio
-
-HTTPS
-
----
-
-# Flujo completo del sistema
-
-Cliente
-
-↓
-
-WhatsApp
-
-↓
-
-Webhook FastAPI
-
-↓
-
-IA (Groq)
-
-↓
-
-Extracción de datos
-
-↓
-
-Reglas de negocio
-
-↓
-
-Resultado
-
-↓
-
-Dashboard
-
-↓
-
-Asesor (si es necesario)
-
-↓
-
-Respuesta manual
-
-↓
-
-WhatsApp (pendiente Twilio)
-
----
-
-# Integración Twilio (pendiente)
-
-Se encuentra implementado el servicio:
-
-```
-TwilioWhatsAppService
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
-Falta únicamente:
+## Prueba por WhatsApp (Sandbox)
 
-- configurar credenciales
+1. Exponer backend con ngrok al puerto `8000`.
+2. En Twilio Sandbox, configurar:
+   - `When a message comes in`: `https://<ngrok>/webhook/whatsapp`
+   - Metodo: `POST`
+3. Unir tu numero al sandbox con el `join ...` de Twilio.
+4. Enviar mensaje por WhatsApp.
 
-- configurar Sandbox
+## Endpoints utiles
 
-- configurar Ngrok
+### Webhook
 
-- cambiar webhook
+- `POST /webhook/whatsapp`
 
-- realizar pruebas finales
+### Dashboard API
 
----
+- `GET /api/dashboard/stats`
+- `GET /api/dashboard/conversations`
+- `GET /api/dashboard/conversations/{id}/messages`
+- `POST /api/dashboard/conversations/{id}/take`
+- `POST /api/dashboard/conversations/{id}/reply`
 
-# Observaciones
+### Salud
 
-Actualmente el proyecto se encuentra completamente funcional para pruebas locales.
+- `GET /health`
 
-La única integración pendiente para disponer del flujo completo es la conexión entre el Dashboard y WhatsApp mediante Twilio Sandbox.
+## Pendientes reales
 
-Una vez realizada esta integración, el sistema permitirá:
+- Autenticacion y autorizacion del dashboard (JWT/roles).
+- Validacion de firma del webhook de Twilio.
+- Endurecimiento de seguridad (rate limit, auditoria, manejo de secretos).
+- Despliegue productivo (infra, dominio, HTTPS, observabilidad).
+- Mejoras UX del panel y analitica avanzada.
 
-- recibir mensajes reales desde WhatsApp
-
-- responder automáticamente mediante IA
-
-- derivar conversaciones
-
-- responder manualmente desde el panel administrativo
-
-- mantener el historial completo de la conversación
-
----
-
-# Estado General
-
-Proyecto estable.
-
-El núcleo del sistema está desarrollado.
-
-El trabajo pendiente corresponde principalmente a integraciones externas, mejoras visuales y funcionalidades complementarias.

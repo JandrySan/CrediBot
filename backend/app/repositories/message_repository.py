@@ -25,6 +25,12 @@ class MessageRepository:
         self.db.refresh(message)
 
         return message
-    
 
-    
+    def get_recent_messages(self, conversation_id: int, limit: int = 8):
+        return (
+            self.db.query(Message)
+            .filter(Message.conversation_id == conversation_id)
+            .order_by(Message.id.desc())
+            .limit(limit)
+            .all()
+        )

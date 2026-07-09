@@ -1,4 +1,6 @@
 from sqlalchemy.orm import Session
+import re
+from decimal import Decimal, InvalidOperation
 
 from app.repositories.ai_analysis_repository import AIAnalysisRepository
 from app.repositories.conversation_state_history_repository import ConversationStateHistoryRepository
@@ -12,6 +14,7 @@ from app.services.conversation.conversation_state_service import ConversationSta
 from app.services.conversation.credit_application_service import CreditApplicationService
 
 from app.state_machine.states import ConversationState
+from app.config.settings import settings
 
 
 class ConversationOrchestrator:
@@ -38,6 +41,14 @@ class ConversationOrchestrator:
 
         self._save_message(conversation.id, "INBOUND", text)
 
+        if settings.AI_ONLY_MODE:
+            history = self._build_ai_history(conversation.id)
+            if history and history[-1].get("role") == "user":
+                history = history[:-1]
+            response = self.ai.generate_whatsapp_reply(text=text, history=history)
+            self._save_message(conversation.id, "OUTBOUND", response)
+            return response
+
         if conversation.status == "HANDOFF":
             response = (
                 "Tu mensaje fue recibido. Un asesor humano te responderá en breve."
@@ -46,6 +57,13 @@ class ConversationOrchestrator:
             return response
 
         ai_data = self.ai.analyze_message(text)
+        ai_data = self._enrich_extracted_data(
+            conversation=conversation,
+            customer=customer,
+            application=application,
+            text=text,
+            ai_data=ai_data
+        )
 
         self.ai_analysis_repo.save_analysis(
             conversation_id=conversation.id,
@@ -195,3 +213,114 @@ class ConversationOrchestrator:
             )
 
         return conversation
+
+    def _build_ai_history(self, conversation_id: int, limit: int = 8) -> list[dict]:
+        rows = self.message_repo.get_recent_messages(conversation_id=conversation_id, limit=limit)
+        history: list[dict] = []
+
+        for row in reversed(rows):
+            role = "assistant" if row.direction == "OUTBOUND" else "user"
+            content = (row.content or "").strip()
+
+            if content:
+                history.append({"role": role, "content": content})
+
+        return history
+
+    def _enrich_extracted_data(self, conversation, customer, application, text: str, ai_data: dict) -> dict:
+        enriched = dict(ai_data or {})
+
+        expected_field = self._expected_field(conversation, customer, application)
+        if not expected_field:
+            return enriched
+
+        if enriched.get(expected_field):
+            return enriched
+
+        if expected_field == "full_name":
+            fallback_name = self._extract_name(text)
+            if fallback_name:
+                enriched["full_name"] = fallback_name
+            return enriched
+
+        if expected_field == "term_months":
+            fallback_term = self._extract_term_months(text)
+            if fallback_term is not None:
+                enriched["term_months"] = fallback_term
+            return enriched
+
+        if expected_field in {"amount", "monthly_income"}:
+            fallback_amount = self._extract_decimal(text)
+            if fallback_amount is not None:
+                enriched[expected_field] = str(fallback_amount)
+
+        return enriched
+
+    def _expected_field(self, conversation, customer, application) -> str | None:
+        by_state = {
+            ConversationState.ASK_NAME.value: "full_name",
+            ConversationState.ASK_AMOUNT.value: "amount",
+            ConversationState.ASK_TERM.value: "term_months",
+            ConversationState.ASK_INCOME.value: "monthly_income",
+        }
+
+        state_field = by_state.get(conversation.current_state)
+        if state_field:
+            return state_field
+
+        return self.state_service.get_next_required_field(customer, application)
+
+    def _extract_name(self, text: str) -> str | None:
+        value = (text or "").strip()
+        if not value:
+            return None
+
+        if re.search(r"\d", value):
+            return None
+
+        cleaned = re.sub(r"[^A-Za-zÁÉÍÓÚáéíóúÑñ\s]", " ", value)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+        if len(cleaned) < 2:
+            return None
+
+        blacklist = {"hola", "buenas", "gracias", "ok", "credito", "crédito"}
+        if cleaned.lower() in blacklist:
+            return None
+
+        return cleaned[:120]
+
+    def _extract_decimal(self, text: str):
+        value = (text or "").strip()
+        if not value:
+            return None
+
+        match = re.search(r"\d[\d\.,]*", value)
+        if not match:
+            return None
+
+        raw = match.group(0)
+        normalized = raw.replace(",", "").replace(" ", "")
+
+        try:
+            return Decimal(normalized)
+        except InvalidOperation:
+            return None
+
+    def _extract_term_months(self, text: str) -> int | None:
+        value = (text or "").lower().strip()
+        if not value:
+            return None
+
+        match = re.search(r"\d+", value)
+        if not match:
+            return None
+
+        number = int(match.group(0))
+        if number <= 0:
+            return None
+
+        if "año" in value or "anos" in value or "años" in value or "ano" in value:
+            return number * 12
+
+        return number
