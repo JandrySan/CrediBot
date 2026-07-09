@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Button, TextField } from "@mui/material";
+import { Alert, Box, Button, TextField } from "@mui/material";
 
 import type { Conversation } from "../../types/conversation";
 import { useReplyConversation } from "../../hooks/useReplyConversation";
@@ -10,6 +10,7 @@ type Props = {
 
 export function ReplyBox({ conversation }: Props) {
   const [message, setMessage] = useState("");
+  const [sendError, setSendError] = useState<string | null>(null);
   const replyMutation = useReplyConversation();
 
   const canReply =
@@ -19,13 +20,28 @@ export function ReplyBox({ conversation }: Props) {
   const handleSend = () => {
     if (!conversation || !message.trim()) return;
 
+    setSendError(null);
+
     replyMutation.mutate(
       {
         conversationId: conversation.conversation_id,
         message: message.trim(),
       },
       {
-        onSuccess: () => setMessage(""),
+        onSuccess: (data) => {
+          if (data?.success) {
+            setMessage("");
+            setSendError(null);
+          } else {
+            setSendError(
+              data?.message ||
+                "El mensaje se guardó en el panel, pero no llegó a WhatsApp."
+            );
+          }
+        },
+        onError: () => {
+          setSendError("No se pudo enviar la respuesta. Revisa la conexión con el backend.");
+        },
       }
     );
   };
@@ -37,9 +53,17 @@ export function ReplyBox({ conversation }: Props) {
         borderTop: "1px solid #ddd",
         backgroundColor: "white",
         display: "flex",
+        flexDirection: "column",
         gap: 1,
       }}
     >
+      {sendError && (
+        <Alert severity="warning" onClose={() => setSendError(null)}>
+          {sendError}
+        </Alert>
+      )}
+
+      <Box sx={{ display: "flex", gap: 1 }}>
       <TextField
         fullWidth
         size="small"
@@ -66,6 +90,7 @@ export function ReplyBox({ conversation }: Props) {
       >
         Enviar
       </Button>
+      </Box>
     </Box>
   );
 }

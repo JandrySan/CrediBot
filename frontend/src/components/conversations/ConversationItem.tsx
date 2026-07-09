@@ -63,8 +63,11 @@ export function ConversationItem({ conversation, onClick }: Props) {
       </Avatar>
 
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center">
-          <Typography fontWeight={800} noWrap>
+        <Stack
+          direction="row"
+          sx={{ justifyContent: "space-between", alignItems: "center" }}
+        >
+          <Typography noWrap sx={{ fontWeight: 800 }}>
             {name}
           </Typography>
 
@@ -84,7 +87,11 @@ export function ConversationItem({ conversation, onClick }: Props) {
           {conversation.state.replaceAll("_", " ")}
         </Typography>
 
-        <Stack direction="row" spacing={1} mt={1} alignItems="center">
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ mt: 1, alignItems: "center" }}
+        >
           <Chip
             size="small"
             label={conversation.credit_result || "Pendiente"}
@@ -93,7 +100,11 @@ export function ConversationItem({ conversation, onClick }: Props) {
           />
 
           {conversation.credit_amount && (
-            <Typography variant="caption" color="text.secondary" fontWeight={700}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: 700 }}
+            >
               ${conversation.credit_amount} · {conversation.term_months || "-"} meses
             </Typography>
           )}

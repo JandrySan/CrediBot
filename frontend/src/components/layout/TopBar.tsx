@@ -14,7 +14,7 @@ export function TopBar() {
     >
       <Toolbar sx={{ justifyContent: "space-between", minHeight: 72 }}>
         <Box>
-          <Typography variant="h6" fontWeight={800}>
+          <Typography variant="h6" sx={{ fontWeight: 800 }}>
             Panel de Asesor
           </Typography>
           <Typography variant="body2" color="text.secondary">
@@ -22,7 +22,7 @@ export function TopBar() {
           </Typography>
         </Box>
 
-        <Box display="flex" alignItems="center" gap={2}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
           <Chip label="En línea" color="success" size="small" />
           <Avatar sx={{ bgcolor: "#0F766E", fontWeight: 800 }}>A</Avatar>
         </Box>

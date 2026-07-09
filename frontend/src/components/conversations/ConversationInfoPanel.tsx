@@ -22,7 +22,7 @@ function InfoRow({ label, value }: { label: string; value: string | number }) {
       <Typography variant="body2" color="text.secondary">
         {label}
       </Typography>
-      <Typography fontWeight={700}>{value}</Typography>
+      <Typography sx={{ fontWeight: 700 }}>{value}</Typography>
     </Box>
   );
 }
@@ -45,7 +45,7 @@ export function ConversationInfoPanel({ conversation }: Props) {
   return (
     <Card elevation={1} sx={{ borderRadius: 3, height: 620, overflowY: "auto" }}>
       <CardContent>
-        <Typography variant="h6" fontWeight={700} mb={2}>
+        <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
           Información del cliente
         </Typography>
 

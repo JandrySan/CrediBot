@@ -78,7 +78,7 @@ export function ConversationList({ onSelect }: Props) {
     return (
       <Card sx={{ borderRadius: 4, height: 620 }}>
         <CardContent>
-          <Box display="flex" justifyContent="center" py={4}>
+          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
             <CircularProgress />
           </Box>
         </CardContent>
@@ -93,7 +93,7 @@ export function ConversationList({ onSelect }: Props) {
   return (
     <Card sx={{ borderRadius: 4, height: 620, overflow: "hidden" }}>
       <CardContent sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-        <Stack direction="row" justifyContent="space-between" mb={2}>
+        <Stack direction="row" sx={{ justifyContent: "space-between", mb: 2 }}>
           <Box>
             <Typography variant="h6">Conversaciones</Typography>
             <Typography variant="body2" color="text.secondary">
@@ -108,13 +108,20 @@ export function ConversationList({ onSelect }: Props) {
           placeholder="Buscar cliente o teléfono"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          InputProps={{
-            startAdornment: <SearchIcon sx={{ color: "#94A3B8", mr: 1 }} />,
+          slotProps={{
+            input: {
+              startAdornment: <SearchIcon sx={{ color: "#94A3B8", mr: 1 }} />,
+            },
           }}
           sx={{ mb: 2 }}
         />
 
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mb={2}>
+        <Stack
+          direction="row"
+          spacing={1}
+          useFlexGap
+          sx={{ mb: 2, flexWrap: "wrap" }}
+        >
           {filters.map((item) => (
             <Chip
               key={item.value}

@@ -36,7 +36,7 @@ export function ConversationChat({ conversation }: Props) {
     return (
       <Card elevation={1} sx={{ borderRadius: 3, height: 620 }}>
         <CardContent>
-          <Box display="flex" justifyContent="center" py={6}>
+          <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
             <CircularProgress />
           </Box>
         </CardContent>
@@ -63,7 +63,7 @@ export function ConversationChat({ conversation }: Props) {
           color: "white",
         }}
       >
-        <Typography fontWeight={700}>
+        <Typography sx={{ fontWeight: 700 }}>
           {conversation.full_name || conversation.phone_number}
         </Typography>
 

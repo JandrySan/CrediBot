@@ -38,6 +38,13 @@ class ConversationOrchestrator:
 
         self._save_message(conversation.id, "INBOUND", text)
 
+        if conversation.status == "HANDOFF":
+            response = (
+                "Tu mensaje fue recibido. Un asesor humano te responderá en breve."
+            )
+            self._save_message(conversation.id, "OUTBOUND", response)
+            return response
+
         ai_data = self.ai.analyze_message(text)
 
         self.ai_analysis_repo.save_analysis(

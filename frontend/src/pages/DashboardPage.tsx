@@ -36,7 +36,7 @@ export function DashboardPage() {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" height="70vh">
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "70vh" }}>
         <CircularProgress />
       </Box>
     );
@@ -57,7 +57,7 @@ export function DashboardPage() {
 
   return (
     <Box>
-      <Box mb={3}>
+      <Box sx={{ mb: 3 }}>
         <Typography variant="h4">Panel operativo</Typography>
         <Typography color="text.secondary">
           Supervisión en tiempo real de WhatsApp, IA y precalificaciones.
@@ -66,15 +66,15 @@ export function DashboardPage() {
 
       <Grid container spacing={2.5}>
         {cards.map((card) => (
-          <Grid item xs={12} sm={6} md={4} lg={2} key={card.title}>
+          <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2 }} key={card.title}>
             <Card sx={{ height: 132 }}>
               <CardContent>
-                <Stack direction="row" justifyContent="space-between">
+                <Stack direction="row" sx={{ justifyContent: "space-between" }}>
                   <Box>
-                    <Typography color="text.secondary" fontWeight={700}>
+                    <Typography color="text.secondary" sx={{ fontWeight: 700 }}>
                       {card.title}
                     </Typography>
-                    <Typography variant="h3" fontWeight={900}>
+                    <Typography variant="h3" sx={{ fontWeight: 900 }}>
                       {card.value}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">

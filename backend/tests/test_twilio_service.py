@@ -1,3 +1,4 @@
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -5,12 +6,33 @@ from unittest.mock import patch
 from app.services.whatsapp import twilio_service
 
 
+FAKE_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "AC0000000000000000000000000000000")
+FAKE_API_KEY_SID = os.getenv("TWILIO_API_KEY_SID", "SK0000000000000000000000000000000")
+FAKE_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "test-auth-token")
+
+
 class TwilioServiceTests(unittest.TestCase):
+    def test_rejects_api_key_sid_instead_of_account_sid(self):
+        fake_settings = SimpleNamespace(
+            TWILIO_ENABLED=True,
+            TWILIO_ACCOUNT_SID=FAKE_API_KEY_SID,
+            TWILIO_AUTH_TOKEN=FAKE_AUTH_TOKEN,
+            TWILIO_WHATSAPP_NUMBER="+14155238886",
+            TWILIO_WEBHOOK_URL="",
+        )
+
+        with patch.object(twilio_service, "settings", fake_settings):
+            service = twilio_service.TwilioWhatsAppService()
+            result = service.send_message(to="3001234567", body="Hola")
+
+            self.assertFalse(result["success"])
+            self.assertIn("AC", result["message"])
+
     def test_send_message_uses_legacy_whatsapp_number_and_normalizes_recipient(self):
         fake_settings = SimpleNamespace(
             TWILIO_ENABLED=True,
-            TWILIO_ACCOUNT_SID="sid",
-            TWILIO_AUTH_TOKEN="token",
+            TWILIO_ACCOUNT_SID=FAKE_ACCOUNT_SID,
+            TWILIO_AUTH_TOKEN=FAKE_AUTH_TOKEN,
             TWILIO_WHATSAPP_NUMBER="+14155238886",
             TWILIO_WEBHOOK_URL="",
         )
@@ -26,11 +48,11 @@ class TwilioServiceTests(unittest.TestCase):
             self.assertEqual(result["sid"], "SM123")
             self.assertEqual(
                 service.client.messages.create.call_args.kwargs["from_"],
-                "+14155238886",
+                "whatsapp:+14155238886",
             )
             self.assertEqual(
                 service.client.messages.create.call_args.kwargs["to"],
-                "+3001234567",
+                "whatsapp:+3001234567",
             )
 
 

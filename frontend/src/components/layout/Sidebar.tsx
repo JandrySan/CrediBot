@@ -30,7 +30,7 @@ export function Sidebar() {
         p: 2.5,
       }}
     >
-      <Typography variant="h5" fontWeight={900} sx={{ mb: 1 }}>
+      <Typography variant="h5" sx={{ fontWeight: 900, mb: 1 }}>
         CrediBot
       </Typography>
 
@@ -58,7 +58,7 @@ export function Sidebar() {
             </ListItemIcon>
             <ListItemText
               primary={item.text}
-              primaryTypographyProps={{ fontWeight: 700 }}
+              slotProps={{ primary: { sx: { fontWeight: 700 } } }}
             />
           </ListItemButton>
         ))}
