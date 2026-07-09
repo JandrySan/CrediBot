@@ -16,6 +16,7 @@ export function ReplyBox({ conversation }: Props) {
   const canReply =
     conversation?.status === "HANDOFF" ||
     conversation?.status === "MANOS LIBRES";
+  const isClosed = conversation?.status === "CLOSED";
 
   const handleSend = () => {
     if (!conversation || !message.trim()) return;
@@ -35,12 +36,14 @@ export function ReplyBox({ conversation }: Props) {
           } else {
             setSendError(
               data?.message ||
-                "El mensaje se guardó en el panel, pero no llegó a WhatsApp."
+                "El mensaje se guardo en el panel, pero no llego a WhatsApp."
             );
           }
         },
         onError: () => {
-          setSendError("No se pudo enviar la respuesta. Revisa la conexión con el backend.");
+          setSendError(
+            "No se pudo enviar la respuesta. Revisa la conexion con el backend."
+          );
         },
       }
     );
@@ -64,32 +67,34 @@ export function ReplyBox({ conversation }: Props) {
       )}
 
       <Box sx={{ display: "flex", gap: 1 }}>
-      <TextField
-        fullWidth
-        size="small"
-        placeholder={
-          canReply
-            ? "Escribe una respuesta como asesor..."
-            : "Toma la conversación para responder"
-        }
-        value={message}
-        disabled={!canReply || replyMutation.isPending}
-        onChange={(event) => setMessage(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            handleSend();
+        <TextField
+          fullWidth
+          size="small"
+          placeholder={
+            isClosed
+              ? "Conversacion cerrada. Espera un nuevo mensaje para el bot."
+              : canReply
+                ? "Escribe una respuesta como asesor..."
+                : "Toma la conversacion para responder"
           }
-        }}
-      />
+          value={message}
+          disabled={!canReply || replyMutation.isPending}
+          onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              handleSend();
+            }
+          }}
+        />
 
-      <Button
-        variant="contained"
-        disabled={!canReply || !message.trim() || replyMutation.isPending}
-        onClick={handleSend}
-      >
-        Enviar
-      </Button>
+        <Button
+          variant="contained"
+          disabled={!canReply || !message.trim() || replyMutation.isPending}
+          onClick={handleSend}
+        >
+          Enviar
+        </Button>
       </Box>
     </Box>
   );

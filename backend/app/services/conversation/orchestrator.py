@@ -74,9 +74,8 @@ class ConversationOrchestrator:
             return response
 
         if conversation.status == "HANDOFF":
-            response = "Tu mensaje fue recibido. Un asesor humano te respondera en breve."
-            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
-            return response
+            # In handoff mode only the advisor should reply.
+            return ""
 
         ai_data = self.ai.analyze_message(text)
         ai_data = self._enrich_extracted_data(
@@ -95,9 +94,8 @@ class ConversationOrchestrator:
         )
 
         if self._is_handoff_requested(text, ai_data):
-            response = self._handoff(conversation)
-            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
-            return response
+            self._handoff(conversation)
+            return ""
 
         self.credit_service.apply_extracted_data(
             customer=customer,
@@ -212,7 +210,7 @@ class ConversationOrchestrator:
             "Si deseas, tambien puedo derivarte con un asesor humano."
         )
 
-    def _handoff(self, conversation) -> str:
+    def _handoff(self, conversation):
         self._change_state(
             conversation=conversation,
             new_state=ConversationState.HANDOFF.value,
@@ -221,8 +219,6 @@ class ConversationOrchestrator:
 
         conversation.status = "HANDOFF"
         self.db.commit()
-
-        return "Entendido. Te voy a derivar con un asesor humano. Por favor espera un momento."
 
     def _is_handoff_requested(self, text: str, ai_data: dict) -> bool:
         if ai_data.get("intent") == "asesor":

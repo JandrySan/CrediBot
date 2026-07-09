@@ -113,14 +113,22 @@ async def receive_whatsapp_message(
         )
 
     twilio_response = MessagingResponse()
-    tts_result = TextToSpeechService().generate_voice_note(response_text)
+    clean_response_text = (response_text or "").strip()
+    tts_result = {"success": False, "message": "Sin respuesta automatica en modo HANDOFF."}
+    is_audio_reply = False
+    bot_response_type = "NONE"
 
-    is_audio_reply = bool(tts_result.get("success")) and bool(tts_result.get("media_url"))
-    if is_audio_reply:
-        reply_message = twilio_response.message()
-        reply_message.media(tts_result["media_url"])
-    else:
-        twilio_response.message(response_text)
+    if clean_response_text:
+        tts_result = TextToSpeechService().generate_voice_note(clean_response_text)
+        is_audio_reply = bool(tts_result.get("success")) and bool(tts_result.get("media_url"))
+
+        if is_audio_reply:
+            reply_message = twilio_response.message()
+            reply_message.media(tts_result["media_url"])
+            bot_response_type = "AUDIO"
+        else:
+            twilio_response.message(clean_response_text)
+            bot_response_type = "TEXT"
 
     await manager.broadcast(
         {
@@ -129,8 +137,8 @@ async def receive_whatsapp_message(
             "message": incoming_text,
             "message_type": incoming_message_type,
             "profile_name": ProfileName,
-            "bot_response_type": "AUDIO" if is_audio_reply else "TEXT",
-            "bot_response": response_text,
+            "bot_response_type": bot_response_type,
+            "bot_response": clean_response_text,
             "bot_media_url": tts_result.get("media_url", ""),
             "bot_audio_error": tts_result.get("message", ""),
         }

@@ -2,6 +2,8 @@ import api from "../api/axios";
 import type { Conversation } from "../types/conversation";
 import type { Message } from "../types/message";
 
+export type ConversationResolution = "APPROVED" | "DENIED" | "RESOLVED";
+
 export const ConversationService = {
   async getAll(): Promise<Conversation[]> {
     const response = await api.get("/api/dashboard/conversations");
@@ -30,6 +32,28 @@ export const ConversationService = {
 
     const response = await api.post(
       `/api/dashboard/conversations/${conversationId}/reply`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
+
+    return response.data;
+  },
+
+  async closeConversation(
+    conversationId: number,
+    resolution: ConversationResolution,
+    note = ""
+  ) {
+    const formData = new FormData();
+    formData.append("resolution", resolution);
+    formData.append("note", note);
+
+    const response = await api.post(
+      `/api/dashboard/conversations/${conversationId}/close`,
       formData,
       {
         headers: {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   Alert,
@@ -23,16 +23,55 @@ import { ConversationChat } from "../components/conversations/ConversationChat";
 import { ConversationInfoPanel } from "../components/conversations/ConversationInfoPanel";
 import { useDashboard } from "../hooks/useDashboard";
 import { useDashboardSocket } from "../hooks/useDashboardSocket";
+import { useConversations } from "../hooks/useConversations";
 
 import type { Conversation } from "../types/conversation";
 
 export function DashboardPage() {
   useDashboardSocket();
 
-  const [selectedConversation, setSelectedConversation] =
-    useState<Conversation | null>(null);
+  const [selectedConversationId, setSelectedConversationId] =
+    useState<number | null>(null);
+  const [selectedPhoneNumber, setSelectedPhoneNumber] =
+    useState<string | null>(null);
 
   const { stats, loading, error } = useDashboard();
+  const { data: conversations = [] } = useConversations();
+
+  const selectedConversation = useMemo<Conversation | null>(() => {
+    if (selectedConversationId === null) {
+      return null;
+    }
+
+    return (
+      conversations.find(
+        (item) => item.conversation_id === selectedConversationId
+      ) ?? null
+    );
+  }, [conversations, selectedConversationId]);
+
+  useEffect(() => {
+    if (selectedConversationId === null || !selectedPhoneNumber) return;
+
+    const currentConversation = conversations.find(
+      (item) => item.conversation_id === selectedConversationId
+    );
+
+    if (!currentConversation) return;
+    if (currentConversation.status !== "CLOSED") return;
+
+    const nextOpenConversation = conversations.find(
+      (item) =>
+        item.phone_number === selectedPhoneNumber &&
+        item.status !== "CLOSED" &&
+        item.conversation_id > selectedConversationId
+    );
+
+    if (nextOpenConversation) {
+      setSelectedConversationId(nextOpenConversation.conversation_id);
+      setSelectedPhoneNumber(nextOpenConversation.phone_number);
+    }
+  }, [conversations, selectedConversationId, selectedPhoneNumber]);
 
   if (loading) {
     return (
@@ -111,7 +150,12 @@ export function DashboardPage() {
         }}
       >
         <Box sx={{ width: "33%", minWidth: 390 }}>
-          <ConversationList onSelect={setSelectedConversation} />
+          <ConversationList
+            onSelect={(conversation) => {
+              setSelectedConversationId(conversation.conversation_id);
+              setSelectedPhoneNumber(conversation.phone_number);
+            }}
+          />
         </Box>
 
         <Box sx={{ flex: 1, display: "flex", gap: 3 }}>

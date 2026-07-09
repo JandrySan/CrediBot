@@ -23,6 +23,7 @@ function getResultColor(result: string | null) {
 
 function getStatusLabel(status: string) {
   if (status === "HANDOFF" || status === "MANOS LIBRES") return "Asesor";
+  if (status === "CLOSED") return "Cerrada";
   if (status === "ACTIVE") return "Bot";
   return status;
 }
@@ -54,6 +55,8 @@ export function ConversationItem({ conversation, onClick }: Props) {
             conversation.status === "HANDOFF" ||
             conversation.status === "MANOS LIBRES"
               ? "#F97316"
+              : conversation.status === "CLOSED"
+                ? "#64748B"
               : "#0F766E",
           mr: 1.5,
           fontWeight: 900,
@@ -78,6 +81,8 @@ export function ConversationItem({ conversation, onClick }: Props) {
               conversation.status === "HANDOFF" ||
               conversation.status === "MANOS LIBRES"
                 ? "warning"
+                : conversation.status === "CLOSED"
+                  ? "default"
                 : "success"
             }
           />

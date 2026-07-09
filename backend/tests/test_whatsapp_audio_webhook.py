@@ -112,3 +112,25 @@ class TestWhatsAppAudioWebhook:
         assert response.status_code == 200
         assert "respuesta en texto" in response.text
         assert "<Media>" not in response.text
+
+    def test_handoff_message_returns_empty_twiml_without_auto_reply(self):
+        with patch(
+            "app.api.whatsapp.ConversationOrchestrator.handle_text_message",
+            return_value="",
+        ), patch(
+            "app.api.whatsapp.TextToSpeechService.generate_voice_note",
+            return_value={"success": False, "message": "sin respuesta automatica"},
+        ):
+            with TestClient(app) as client:
+                response = client.post(
+                    "/webhook/whatsapp",
+                    data={
+                        "From": "whatsapp:+593000000005",
+                        "Body": "quiero hablar con asesor",
+                        "ProfileName": "Test",
+                        "MessageType": "text",
+                    },
+                )
+
+        assert response.status_code == 200
+        assert "<Message>" not in response.text

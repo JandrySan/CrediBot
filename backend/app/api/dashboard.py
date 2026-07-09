@@ -27,6 +27,9 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
         "handoff_conversations": db.query(Conversation).filter(
             Conversation.status == "HANDOFF"
         ).count(),
+        "closed_conversations": db.query(Conversation).filter(
+            Conversation.status == "CLOSED"
+        ).count(),
         "preapproved": db.query(CreditApplication).filter(
             CreditApplication.result == "PREAPROBADO"
         ).count(),
@@ -106,6 +109,12 @@ def take_conversation(
             "message": "Conversación no encontrada"
         }
 
+    if conversation.status == "CLOSED":
+        return {
+            "success": False,
+            "message": "La conversación está cerrada. Espera una nueva conversación del cliente."
+        }
+
     conversation.status = "HANDOFF"
     conversation.current_state = ConversationState.HANDOFF.value
 
@@ -137,6 +146,12 @@ async def reply_conversation(
         return {
             "success": False,
             "message": "Conversación no encontrada"
+        }
+
+    if conversation.status != "HANDOFF":
+        return {
+            "success": False,
+            "message": "Solo puedes responder manualmente cuando la conversacion esta en HANDOFF."
         }
 
     customer = (
@@ -187,4 +202,86 @@ async def reply_conversation(
         "message_saved": True,
         "whatsapp_sent": whatsapp_sent,
         "twilio": twilio_result
+    }
+
+
+@router.post("/conversations/{conversation_id}/close")
+async def close_conversation(
+    conversation_id: int,
+    resolution: str = Form(default="RESOLVED"),
+    note: str = Form(default=""),
+    db: Session = Depends(get_db),
+):
+    conversation = (
+        db.query(Conversation)
+        .filter(Conversation.id == conversation_id)
+        .first()
+    )
+
+    if not conversation:
+        return {
+            "success": False,
+            "message": "Conversación no encontrada"
+        }
+
+    if conversation.status != "HANDOFF":
+        return {
+            "success": False,
+            "message": "Solo puedes cerrar conversaciones en estado HANDOFF."
+        }
+
+    normalized_resolution = (resolution or "").strip().upper()
+    resolution_map = {
+        "APPROVED": ("APROBADO_ASESOR", "Credito aprobado por asesor"),
+        "DENIED": ("NEGADO_ASESOR", "Credito negado por asesor"),
+        "RESOLVED": ("RESUELTO_ASESOR", "Duda resuelta por asesor"),
+    }
+
+    if normalized_resolution not in resolution_map:
+        normalized_resolution = "RESOLVED"
+
+    conversation_result, resolution_reason = resolution_map[normalized_resolution]
+
+    latest_application = (
+        db.query(CreditApplication)
+        .filter(CreditApplication.customer_id == conversation.customer_id)
+        .order_by(CreditApplication.id.desc())
+        .first()
+    )
+
+    if latest_application and latest_application.result is None:
+        if normalized_resolution == "APPROVED":
+            latest_application.result = "PREAPROBADO"
+        elif normalized_resolution == "DENIED":
+            latest_application.result = "OBSERVADO"
+        else:
+            latest_application.result = "RESUELTO_ASESOR"
+
+        if (note or "").strip():
+            latest_application.reason = f"{resolution_reason}. Nota: {(note or '').strip()}"
+        else:
+            latest_application.reason = resolution_reason
+
+    conversation.status = "CLOSED"
+    conversation.current_state = ConversationState.END.value
+    conversation.result = conversation_result
+
+    db.commit()
+    db.refresh(conversation)
+
+    await manager.broadcast({
+        "type": "CONVERSATION_CLOSED",
+        "conversation_id": conversation.id,
+        "status": conversation.status,
+        "state": conversation.current_state,
+        "resolution": normalized_resolution,
+    })
+
+    return {
+        "success": True,
+        "message": "Conversación cerrada. El siguiente mensaje del cliente iniciará un nuevo flujo con el bot.",
+        "conversation_id": conversation.id,
+        "status": conversation.status,
+        "state": conversation.current_state,
+        "resolution": normalized_resolution,
     }

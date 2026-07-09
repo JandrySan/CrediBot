@@ -5,6 +5,7 @@ export interface DashboardStats {
     conversations: number;
     active_conversations: number;
     handoff_conversations: number;
+    closed_conversations: number;
     preapproved: number;
     observed: number;
 }

@@ -10,7 +10,9 @@ import {
 } from "@mui/material";
 
 import { useTakeConversation } from "../../hooks/useTakeConversation";
+import { useCloseConversation } from "../../hooks/useCloseConversation";
 import type { Conversation } from "../../types/conversation";
+import type { ConversationResolution } from "../../services/conversation.service";
 
 type Props = {
   conversation: Conversation | null;
@@ -29,13 +31,27 @@ function InfoRow({ label, value }: { label: string; value: string | number }) {
 
 export function ConversationInfoPanel({ conversation }: Props) {
   const takeConversation = useTakeConversation();
+  const closeConversation = useCloseConversation();
+
+  const isHandoff = conversation?.status === "HANDOFF";
+  const isClosed = conversation?.status === "CLOSED";
+  const busy = takeConversation.isPending || closeConversation.isPending;
+
+  const handleClose = (resolution: ConversationResolution) => {
+    if (!conversation) return;
+
+    closeConversation.mutate({
+      conversationId: conversation.conversation_id,
+      resolution,
+    });
+  };
 
   if (!conversation) {
     return (
       <Card elevation={1} sx={{ borderRadius: 3, height: 620 }}>
         <CardContent>
           <Typography color="text.secondary">
-            Selecciona una conversación para ver la información del cliente.
+            Selecciona una conversacion para ver la informacion del cliente.
           </Typography>
         </CardContent>
       </Card>
@@ -46,7 +62,7 @@ export function ConversationInfoPanel({ conversation }: Props) {
     <Card elevation={1} sx={{ borderRadius: 3, height: 620, overflowY: "auto" }}>
       <CardContent>
         <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
-          Información del cliente
+          Informacion del cliente
         </Typography>
 
         <Stack spacing={2}>
@@ -55,7 +71,7 @@ export function ConversationInfoPanel({ conversation }: Props) {
             value={conversation.full_name || "Sin nombre registrado"}
           />
 
-          <InfoRow label="Teléfono" value={conversation.phone_number} />
+          <InfoRow label="Telefono" value={conversation.phone_number} />
 
           <Divider />
 
@@ -108,28 +124,63 @@ export function ConversationInfoPanel({ conversation }: Props) {
 
           <InfoRow
             label="Motivo"
-            value={conversation.credit_reason || "Sin evaluación registrada"}
+            value={conversation.credit_reason || "Sin evaluacion registrada"}
           />
 
           <Divider />
 
-          <InfoRow label="Estado conversación" value={conversation.state} />
-          <InfoRow label="Atención" value={conversation.status} />
+          <InfoRow label="Estado conversacion" value={conversation.state} />
+          <InfoRow label="Atencion" value={conversation.status} />
 
           <Divider />
 
           <Button
             variant="contained"
             color="primary"
-            disabled={
-              conversation.status === "HANDOFF" || takeConversation.isPending
-            }
+            disabled={isHandoff || isClosed || busy}
             onClick={() => takeConversation.mutate(conversation.conversation_id)}
           >
-            {conversation.status === "HANDOFF"
-              ? "Conversación tomada"
-              : "Tomar conversación"}
+            {isClosed
+              ? "Conversacion cerrada"
+              : isHandoff
+                ? "Conversacion tomada"
+                : "Tomar conversacion"}
           </Button>
+
+          {isHandoff && (
+            <Stack spacing={1}>
+              <Typography variant="body2" color="text.secondary">
+                Cuando termines con el cliente, cierra la conversacion:
+              </Typography>
+
+              <Button
+                variant="outlined"
+                color="success"
+                disabled={busy}
+                onClick={() => handleClose("APPROVED")}
+              >
+                Aprobar y cerrar
+              </Button>
+
+              <Button
+                variant="outlined"
+                color="error"
+                disabled={busy}
+                onClick={() => handleClose("DENIED")}
+              >
+                Negar y cerrar
+              </Button>
+
+              <Button
+                variant="outlined"
+                color="secondary"
+                disabled={busy}
+                onClick={() => handleClose("RESOLVED")}
+              >
+                Resuelta y cerrar
+              </Button>
+            </Stack>
+          )}
         </Stack>
       </CardContent>
     </Card>
