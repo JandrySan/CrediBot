@@ -5,6 +5,7 @@ from app.database.init_db import init_db
 from app.database.session import SessionLocal
 from app.api.whatsapp import router as whatsapp_router
 from app.api.dashboard import router as dashboard_router
+from app.config.settings import settings
 from app.services.conversation.conversation_manager import ConversationManager
 
 from app.api.websocket import router as websocket_router
@@ -16,10 +17,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

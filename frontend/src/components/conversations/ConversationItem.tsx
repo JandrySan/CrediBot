@@ -6,6 +6,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import type { ChipProps } from "@mui/material";
 
 import type { Conversation } from "../../types/conversation";
 
@@ -14,7 +15,7 @@ type Props = {
   onClick?: (conversation: Conversation) => void;
 };
 
-function getResultColor(result: string | null) {
+function getResultColor(result: string | null): ChipProps["color"] {
   if (result === "PREAPROBADO") return "success";
   if (result === "OBSERVADO") return "warning";
   if (result === "RECHAZADO") return "error";
@@ -100,7 +101,7 @@ export function ConversationItem({ conversation, onClick }: Props) {
           <Chip
             size="small"
             label={conversation.credit_result || "Pendiente"}
-            color={getResultColor(conversation.credit_result) as any}
+            color={getResultColor(conversation.credit_result)}
             variant="outlined"
           />
 

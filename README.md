@@ -334,6 +334,50 @@ cd frontend
 npm run dev
 ```
 
+## CI/CD y despliegue AWS
+
+El repositorio incluye workflows de GitHub Actions para:
+
+- Validar backend FastAPI con instalacion, verificacion de sintaxis y pruebas.
+- Validar frontend React con lint y build.
+- Publicar la imagen Docker del backend en Amazon ECR.
+- Actualizar un servicio ECS Fargate existente usando OIDC, sin access keys estaticas.
+
+Documentacion completa: `docs/despliegue-aws.md`.
+
+Variables principales para GitHub Actions:
+
+```text
+AWS_REGION
+AWS_ECR_REPOSITORY
+AWS_ROLE_ARN
+AWS_ECS_CLUSTER
+AWS_ECS_SERVICE
+AWS_ECS_CONTAINER_NAME (opcional si la task tiene un solo contenedor)
+```
+
+Variables principales para el backend en ECS:
+
+```text
+DATABASE_URL
+GROQ_API_KEY
+TWILIO_ACCOUNT_SID
+TWILIO_AUTH_TOKEN
+TWILIO_WHATSAPP_FROM
+TWILIO_WHATSAPP_NUMBER
+TWILIO_WEBHOOK_URL
+BACKEND_CORS_ORIGINS
+```
+
+El frontend web ya no tiene la API fija a localhost. Para local o produccion, usar:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_WS_BASE_URL=ws://127.0.0.1:8000
+```
+
+En produccion, apuntar esas variables a la URL HTTPS final del backend.
+
 ## Prueba con Twilio Sandbox
 
 1. Levantar backend en puerto `8000`.

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import {
   Alert,
@@ -43,34 +43,26 @@ export function DashboardPage() {
       return null;
     }
 
-    return (
+    const currentConversation =
       conversations.find(
         (item) => item.conversation_id === selectedConversationId
-      ) ?? null
-    );
-  }, [conversations, selectedConversationId]);
+      ) ?? null;
 
-  useEffect(() => {
-    if (selectedConversationId === null || !selectedPhoneNumber) return;
-
-    const currentConversation = conversations.find(
-      (item) => item.conversation_id === selectedConversationId
-    );
-
-    if (!currentConversation) return;
-    if (currentConversation.status !== "CLOSED") return;
-
-    const nextOpenConversation = conversations.find(
-      (item) =>
-        item.phone_number === selectedPhoneNumber &&
-        item.status !== "CLOSED" &&
-        item.conversation_id > selectedConversationId
-    );
-
-    if (nextOpenConversation) {
-      setSelectedConversationId(nextOpenConversation.conversation_id);
-      setSelectedPhoneNumber(nextOpenConversation.phone_number);
+    if (
+      currentConversation?.status !== "CLOSED" ||
+      selectedPhoneNumber === null
+    ) {
+      return currentConversation;
     }
+
+    return (
+      conversations.find(
+        (item) =>
+          item.phone_number === selectedPhoneNumber &&
+          item.status !== "CLOSED" &&
+          item.conversation_id > selectedConversationId
+      ) ?? currentConversation
+    );
   }, [conversations, selectedConversationId, selectedPhoneNumber]);
 
   if (loading) {
