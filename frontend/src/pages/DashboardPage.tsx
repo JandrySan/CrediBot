@@ -143,6 +143,7 @@ export function DashboardPage() {
       >
         <Box sx={{ width: "33%", minWidth: 390 }}>
           <ConversationList
+            selectedConversationId={selectedConversation?.conversation_id ?? null}
             onSelect={(conversation) => {
               setSelectedConversationId(conversation.conversation_id);
               setSelectedPhoneNumber(conversation.phone_number);

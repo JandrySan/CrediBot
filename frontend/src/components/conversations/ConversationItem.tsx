@@ -12,6 +12,7 @@ import type { Conversation } from "../../types/conversation";
 
 type Props = {
   conversation: Conversation;
+  selected?: boolean;
   onClick?: (conversation: Conversation) => void;
 };
 
@@ -29,24 +30,35 @@ function getStatusLabel(status: string) {
   return status;
 }
 
-export function ConversationItem({ conversation, onClick }: Props) {
+export function ConversationItem({
+  conversation,
+  selected = false,
+  onClick,
+}: Props) {
   const name = conversation.full_name || conversation.phone_number;
   const initials = name.substring(0, 2).toUpperCase();
 
   return (
     <ListItemButton
+      selected={selected}
       onClick={() => onClick?.(conversation)}
       sx={{
         borderRadius: 4,
         mb: 1.2,
         p: 1.5,
-        border: "1px solid #E2E8F0",
-        backgroundColor: "white",
+        border: selected ? "2px solid #0F766E" : "1px solid #E2E8F0",
+        backgroundColor: selected ? "#F0FDFA" : "white",
         transition: "0.2s ease",
         "&:hover": {
           borderColor: "#0F766E",
           transform: "translateY(-1px)",
           boxShadow: "0 8px 20px rgba(15, 23, 42, 0.08)",
+        },
+        "&.Mui-selected": {
+          backgroundColor: "#F0FDFA",
+          "&:hover": {
+            backgroundColor: "#CCFBF1",
+          },
         },
       }}
     >

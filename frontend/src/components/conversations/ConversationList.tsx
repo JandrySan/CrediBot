@@ -20,6 +20,7 @@ import { ConversationItem } from "./ConversationItem";
 import type { Conversation } from "../../types/conversation";
 
 type Props = {
+  selectedConversationId?: number | null;
   onSelect?: (conversation: Conversation) => void;
 };
 
@@ -41,7 +42,10 @@ function normalize(value: string | null | undefined) {
     .trim();
 }
 
-export function ConversationList({ onSelect }: Props) {
+export function ConversationList({
+  selectedConversationId = null,
+  onSelect,
+}: Props) {
   const { data = [], isLoading, isError } = useConversations();
 
   const [search, setSearch] = useState("");
@@ -140,6 +144,7 @@ export function ConversationList({ onSelect }: Props) {
             <ConversationItem
               key={conversation.conversation_id}
               conversation={conversation}
+              selected={conversation.conversation_id === selectedConversationId}
               onClick={onSelect}
             />
           ))}

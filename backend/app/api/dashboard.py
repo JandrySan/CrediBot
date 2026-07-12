@@ -57,10 +57,26 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 
 @router.get("/conversations")
 def get_conversations(db: Session = Depends(get_db)):
+    latest_app_subq = (
+        db.query(
+            CreditApplication.customer_id,
+            func.max(CreditApplication.id).label("max_id"),
+        )
+        .group_by(CreditApplication.customer_id)
+        .subquery()
+    )
+
     conversations = (
         db.query(Conversation, Customer, CreditApplication)
         .join(Customer, Conversation.customer_id == Customer.id)
-        .outerjoin(CreditApplication, CreditApplication.customer_id == Customer.id)
+        .outerjoin(
+            latest_app_subq,
+            latest_app_subq.c.customer_id == Customer.id,
+        )
+        .outerjoin(
+            CreditApplication,
+            CreditApplication.id == latest_app_subq.c.max_id,
+        )
         .order_by(Conversation.id.desc())
         .all()
     )
