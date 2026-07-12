@@ -25,3 +25,7 @@ python-jose
 passlib[bcrypt]
 
 loguru
+
+sentence-transformers
+
+numpy

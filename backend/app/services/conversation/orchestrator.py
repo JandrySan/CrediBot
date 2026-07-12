@@ -10,8 +10,12 @@ from app.repositories.credit_application_repository import CreditApplicationRepo
 from app.services.ai.ai_orchestrator import AIOrchestrator
 from app.services.conversation.conversation_state_service import ConversationStateService
 from app.services.conversation.credit_application_service import CreditApplicationService
+from app.services.tools import tool_registry
+from app.services.tools.rag_tools import SearchFAQTool
+from app.services.rag.knowledge_base import KnowledgeBase
 
 from app.state_machine.states import ConversationState
+from app.models.message import Message
 
 
 class ConversationOrchestrator:
@@ -28,6 +32,11 @@ class ConversationOrchestrator:
         self.ai = AIOrchestrator()
         self.state_service = ConversationStateService()
         self.credit_service = CreditApplicationService()
+
+        self.knowledge_base = KnowledgeBase(db)
+        if self.knowledge_base.is_ready():
+            faq_tool = SearchFAQTool(self.knowledge_base)
+            tool_registry.register(faq_tool)
 
     def handle_text_message(self, phone_number: str, text: str) -> str:
         text = (text or "").strip()
@@ -84,8 +93,9 @@ class ConversationOrchestrator:
                 reason="Solicitud completa y evaluada"
             )
 
-            response = self._build_result_response(evaluation)
-            response = self.ai.improve_response(response)
+            base_response = self._build_result_response(evaluation)
+            enriched = self._enrich_with_tools(base_response, text, conversation.id)
+            response = self.ai.improve_response(enriched)
             self._save_message(conversation.id, "OUTBOUND", response)
             return response
 
@@ -103,10 +113,18 @@ class ConversationOrchestrator:
                 reason=f"Falta el campo requerido: {missing_field}"
             )
 
-            response = self._question_for_field(missing_field, customer)
-            response = self.ai.improve_response(response)
+            base_response = self._question_for_field(missing_field, customer)
+            enriched = self._enrich_with_tools(base_response, text, conversation.id)
+            response = self.ai.improve_response(enriched)
             self._save_message(conversation.id, "OUTBOUND", response)
             return response
+
+        if ai_data.get("intent") in ("saludo", "desconocido"):
+            enriched = self._enrich_with_tools(text, text, conversation.id)
+            if enriched != text:
+                response = self.ai.improve_response(enriched)
+                self._save_message(conversation.id, "OUTBOUND", response)
+                return response
 
         response = (
             "Tu solicitud ya fue registrada. "
@@ -115,6 +133,47 @@ class ConversationOrchestrator:
 
         self._save_message(conversation.id, "OUTBOUND", response)
         return response
+
+    def _enrich_with_tools(self, base_response: str, user_message: str, conversation_id: int) -> str:
+        if not tool_registry.get_all():
+            return base_response
+
+        system_prompt = (
+            "Eres CrediBot, un asistente financiero amable y profesional. "
+            "Tienes acceso a herramientas que puedes usar para mejorar tu respuesta. "
+            "Si el usuario hace una pregunta sobre créditos, busca en las FAQs. "
+            "Si el usuario pide calcular una cuota, usa la calculadora. "
+            "Responde de forma natural y conversacional."
+        )
+
+        history = self._build_message_history(conversation_id)
+
+        tool_response = self.ai.process_with_tools(
+            system_prompt=system_prompt,
+            user_message=user_message,
+            conversation_history=history,
+            registry=tool_registry if tool_registry.get_all() else None,
+        )
+
+        if tool_response and len(tool_response) > len(base_response) * 0.5:
+            return tool_response
+
+        return base_response
+
+    def _build_message_history(self, conversation_id: int) -> list[dict]:
+        messages = (
+            self.db.query(Message)
+            .filter(Message.conversation_id == conversation_id)
+            .order_by(Message.id.asc())
+            .limit(20)
+            .all()
+        )
+
+        result = []
+        for msg in messages:
+            role = "user" if msg.direction == "INBOUND" else "assistant"
+            result.append({"role": role, "content": msg.content})
+        return result
 
     def _question_for_field(self, field: str, customer) -> str:
         questions = {

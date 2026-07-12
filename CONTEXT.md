@@ -29,6 +29,9 @@ CrediBot/
 │   │   ├── services/    # Lógica de negocio
 │   │   │   ├── ai/      # Orquestación de IA (Groq)
 │   │   │   ├── conversation/  # Máquina de estados
+│   │   │   ├── tools/   # Sistema de Tools / Function Calling
+│   │   │   ├── rag/     # RAG (FAQs, búsqueda semántica)
+│   │   │   ├── audio/   # Procesamiento de audio (STT)
 │   │   │   ├── whatsapp/  # Integración Twilio
 │   │   │   └── websocket/  # Conexiones en tiempo real
 │   │   └── state_machine/  # Definición de estados
@@ -109,6 +112,13 @@ ConversationStateHistory
 ├── new_state
 ├── reason
 └── created_at
+
+DocumentChunk
+├── id (PK)
+├── content (texto del chunk)
+├── embedding (vector 384-dim serializado)
+├── source_info (JSON: sección, pregunta)
+└── created_at
 ```
 
 ---
@@ -137,7 +147,7 @@ HANDOFF (Usuario solicita asesor)
 
 1. **Recepción (Webhook Twilio)**
    - POST /webhook/whatsapp
-   - Twilio envía: From, Body, ProfileName
+   - Twilio envía: From, Body, ProfileName, MediaUrl0 (para audio)
 
 2. **Orquestación**
    - ConversationOrchestrator.handle_text_message()
@@ -162,12 +172,17 @@ HANDOFF (Usuario solicita asesor)
    - Cambia el estado de Conversation si corresponde
    - Registra la transición en ConversationStateHistory
 
-7. **Generación de Respuesta**
-   - AIOrchestrator mejora la respuesta
+7. **Enriquecimiento con Tools** (nuevo)
+   - _enrich_with_tools() ejecuta el ciclo de function calling
+   - La IA puede invocar tools: search_faqs, calculate_monthly_payment, handoff_to_agent
+   - El resultado de las tools se retroalimenta al modelo para generar la respuesta final
+
+8. **Generación de Respuesta**
+   - AIOrchestrator mejora la respuesta con ResponseImprover
    - Guarda el mensaje OUTBOUND
    - Retorna el mensaje al webhook de Twilio
 
-8. **Transmisión en Tiempo Real**
+9. **Transmisión en Tiempo Real**
    - Broadcast via WebSocket al dashboard
    - Dashboard se actualiza sin refresh
 
@@ -175,21 +190,154 @@ HANDOFF (Usuario solicita asesor)
 
 ## 🤖 Integración de IA (Groq)
 
-### Componentes
+### Componentes Originales
 
 - **IntentDetector**: Identifica si el usuario quiere hablar con un asesor
 - **EntityExtractor**: Extrae datos (nombre, monto, plazo, ingresos)
 - **ResponseGenerator**: Genera respuestas contextuales
 - **ResponseImprover**: Mejora la calidad de respuestas
 
-### Flujo
+### Function Calling (Tool System)
+
+El AIGateway ahora soporta function calling nativo de Groq. El flujo extendido es:
 
 ```
-Mensaje → IntentDetector → (intent: "normal" | "asesor")
+Mensaje → IntentDetector → (intent)
        → EntityExtractor → {full_name, amount, term_months, monthly_income}
        → [Evaluación + Reglas de Negocio]
        → ResponseGenerator → Respuesta base
-       → ResponseImprover → Respuesta mejorada
+       → _enrich_with_tools():
+          │  Groq recibe: respuesta base + tools disponibles
+          │  ├─ search_faqs(query) → FAQ relevante
+          │  ├─ check_credit_rules(amount, term, income) → PREAPROBADO/OBSERVADO
+          │  ├─ calculate_monthly_payment(amount, term, rate) → cuota mensual
+          │  └─ handoff_to_agent(reason) → deriva a asesor
+          │  El resultado de la tool vuelve al modelo → respuesta enriquecida
+       → ResponseImprover → Respuesta mejorada final
+```
+
+---
+
+## 🧰 Sistema de Tools
+
+**Ubicación**: `app/services/tools/`
+
+### Arquitectura
+
+```
+Tool (ABC)
+├── name: str
+├── description: str (para que la IA decida cuándo usarla)
+├── parameters: dict (JSON Schema de argumentos)
+├── run(**kwargs) → ejecuta la herramienta
+└── to_definition() → formato Groq/OpenAI function calling
+
+ToolRegistry
+├── register(tool)
+├── get(name)
+├── get_all()
+└── list_definitions()
+
+ToolExecutor
+└── execute(system_prompt, messages, available_tools, max_rounds=5)
+    ├── Llama a Groq con tools definidas
+    ├── Si Groq retorna tool_calls → ejecuta cada tool
+    ├── Retroalimenta el resultado a Groq
+    └── Retorna respuesta final con contexto de tools
+```
+
+### Tools Disponibles
+
+| Tool | Disparo (cuándo la IA la usa) | Parámetros |
+|------|-------------------------------|------------|
+| `check_credit_rules` | El usuario proporciona monto, plazo e ingresos | amount, term_months, monthly_income |
+| `calculate_monthly_payment` | El usuario pregunta cuánto pagaría al mes | amount, term_months, annual_rate |
+| `handoff_to_agent` | El usuario solicita un asesor o muestra insatisfacción | reason |
+| `search_faqs` | El usuario pregunta sobre tasas, requisitos, políticas | query |
+
+Las tools se registran automáticamente al iniciar el módulo `app/services/tools/__init__.py`. La tool `search_faqs` se registra dinámicamente cuando el orquestador detecta que la base de conocimiento tiene datos.
+
+---
+
+## 📚 RAG (Búsqueda Semántica en FAQs)
+
+**Ubicación**: `app/services/rag/`
+
+### Arquitectura
+
+```
+EmbeddingService
+├── Modelo: all-MiniLM-L6-v2 (384 dimensiones)
+├── embed(text) → vector
+└── embed_batch(texts) → vectores
+
+VectorStore
+├── insert_chunks(chunks) → almacena texto + embedding + metadatos
+├── search(query_embedding, top_k) → búsqueda por similitud coseno
+└── Soporte: pgvector (PostgreSQL) o cómputo en Python
+
+Retriever
+├── search(query, top_k) → embed → vector_store.search → resultados
+└── format_context(results, max_chars) → texto plano para el LLM
+
+KnowledgeBase
+├── ingest_faq_file(file_path) → carga markdown → chunking → embed → store
+├── query(question) → retrieve → format_context
+└── is_ready() → verifica si hay datos indexados
+```
+
+### Ingestión de FAQs
+
+El archivo fuente está en `app/services/rag/data/faqs.md`. Para indexarlo:
+
+```bash
+cd backend
+python -c "
+from app.database.session import SessionLocal
+from app.services.rag.knowledge_base import KnowledgeBase
+
+db = SessionLocal()
+kb = KnowledgeBase(db)
+kb.ingest_faq_file('app/services/rag/data/faqs.md')
+print('FAQs indexadas correctamente')
+"
+```
+
+### Formato del FAQ
+
+El archivo FAQs.md usa markdown con secciones (`#`) y preguntas (`##`):
+
+```markdown
+# Nombre de Sección
+
+## ¿Pregunta?
+Respuesta en texto plano.
+```
+
+Cada pregunta/respuesta se convierte en un chunk independiente con metadatos de sección y pregunta.
+
+---
+
+## 🔊 Procesamiento de Audio
+
+**Ubicación**: `app/services/audio/speech_to_text.py`
+
+### SpeechToTextService
+
+- Usa `faster-whisper` (modelo `base`) para transcripción
+- Soporta descarga desde URL (MediaUrl0 de Twilio) o archivos locales
+- Formatos soportados: OGG, MP3, WAV, M4A
+
+### Flujo
+
+```
+Twilio envía mensaje con MediaUrl0 (audio)
+    ↓
+Webhook detecta media_type "audio" → llama a transcribe_url()
+    ↓
+Descarga el audio → faster-whisper → texto transcrito
+    ↓
+El texto se procesa como un mensaje normal (handle_text_message)
 ```
 
 ---
@@ -216,7 +364,15 @@ WhatsApp (Respuesta)
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| POST | /webhook/whatsapp | Recibe mensajes de Twilio |
+| POST | /webhook/whatsapp | Recibe mensajes de Twilio (texto y audio) |
+
+### Soporte de Audio
+
+El webhook ahora acepta los parámetros adicionales:
+- `MediaUrl0`: URL del archivo de audio enviado por el usuario
+- `MediaContentType0`: tipo MIME del media (ej: audio/ogg)
+
+Cuando se recibe un audio, se transcribe automáticamente con SpeechToTextService y se procesa como un mensaje de texto.
 
 ### Servicio Twilio
 
@@ -374,17 +530,18 @@ App
 
 ### Pruebas Unitarias
 
-**Archivo**: `backend/tests/test_twilio_service.py`
+**Archivos**: `backend/tests/`
 
 Verifica:
 - Normalización de números telefónicos
 - Uso correcto del número de Twilio
 - Respuestas exitosas
+- Operaciones de repositorios (customer, conversation)
 
 Ejecutar:
 ```bash
 cd backend
-.\.venv\Scripts\python -m pytest -q tests/test_twilio_service.py
+.\.venv\Scripts\python -m pytest -q tests/
 ```
 
 ---
@@ -416,6 +573,16 @@ cp .env.example .env
 
 # Inicializar BD
 python -c "from app.database.init_db import init_db; init_db()"
+
+# Ingestar FAQs (opcional, una vez)
+python -c "
+from app.database.session import SessionLocal
+from app.services.rag.knowledge_base import KnowledgeBase
+db = SessionLocal()
+kb = KnowledgeBase(db)
+kb.ingest_faq_file('app/services/rag/data/faqs.md')
+print('FAQs indexadas')
+"
 
 # Ejecutar
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
@@ -518,6 +685,19 @@ ngrok http 8000
 4. Configurar URL: `https://[ngrok-url]/webhook/whatsapp`
 5. Guardar cambios
 
+### El RAG no encuentra respuestas
+
+```bash
+# Verificar que las FAQs están indexadas
+python -c "
+from app.database.session import SessionLocal
+from app.services.rag.knowledge_base import KnowledgeBase
+db = SessionLocal()
+kb = KnowledgeBase(db)
+print(f'Chunks indexados: {kb.vector_store.count()}')
+"
+```
+
 ---
 
 ## 📚 Documentación de Referencia
@@ -527,10 +707,27 @@ ngrok http 8000
 - [SQLAlchemy](https://docs.sqlalchemy.org/)
 - [React](https://react.dev/)
 - [TypeScript](https://www.typescriptlang.org/)
+- [Groq Function Calling](https://console.groq.com/docs/tool-use)
+- [sentence-transformers](https://www.sbert.net/)
+- [pgvector](https://github.com/pgvector/pgvector)
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 
 ---
 
 ## 📅 Historial de Cambios
+
+### v1.1.0 - Tool System, RAG y Audio
+
+- ✅ Tool System: base Tool ABC, ToolRegistry, ToolExecutor con ciclo function-calling
+- ✅ Tools: check_credit_rules, calculate_monthly_payment, search_faqs, handoff_to_agent
+- ✅ RAG con FAQs: EmbeddingService (sentence-transformers), VectorStore, Retriever, KnowledgeBase
+- ✅ FAQ inicial con 14 preguntas/respuestas sobre créditos
+- ✅ Speech-to-Text con faster-whisper para mensajes de audio
+- ✅ AIGateway actualizado con chat() y soporte de tools/tool_choice
+- ✅ AIOrchestrator con process_with_tools() para orquestar tools
+- ✅ ConversationOrchestrator con _enrich_with_tools() para respuestas enriquecidas
+- ✅ Webhook actualizado para recibir MediaUrl0 (audio desde WhatsApp)
+- ✅ Modelo DocumentChunk para almacenamiento de vectores
 
 ### v1.0.0 - Integración Twilio Completa
 - ✅ Webhook de entrada WhatsApp
@@ -551,7 +748,7 @@ ngrok http 8000
 
 **Proyecto**: CrediBot  
 **Estado**: Activo  
-**Última actualización**: 2026-07-08
+**Última actualización**: 2026-07-11
 
 ---
 
@@ -564,4 +761,3 @@ Para reportar bugs o sugerencias, documentar en issues del repositorio con:
 - Environment info
 
 ---
-
