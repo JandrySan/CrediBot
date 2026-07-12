@@ -1,4 +1,5 @@
 from app.state_machine.states import ConversationState
+from app.state_machine.transitions import STATE_TRANSITIONS
 
 
 class ConversationStateService:
@@ -26,3 +27,11 @@ class ConversationStateService:
         }
 
         return mapping.get(field, ConversationState.START.value)
+
+    def get_allowed_transition_names(self, current_state: str) -> list[str]:
+        try:
+            state = ConversationState(current_state)
+            transitions = STATE_TRANSITIONS.get(state, [])
+            return [t.value for t in transitions]
+        except ValueError:
+            return []

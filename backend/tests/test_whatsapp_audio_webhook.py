@@ -11,7 +11,7 @@ class TestWhatsAppAudioWebhook:
             "app.api.whatsapp.SpeechToTextService.transcribe_twilio_media",
             return_value={"success": True, "text": "hola desde audio"},
         ), patch(
-            "app.api.whatsapp.ConversationOrchestrator.handle_audio_message",
+            "app.services.whatsapp.whatsapp_service.WhatsAppService.process_audio_transcript",
             return_value="respuesta por audio",
         ), patch(
             "app.api.whatsapp.TextToSpeechService.generate_voice_note",
@@ -40,7 +40,7 @@ class TestWhatsAppAudioWebhook:
             "app.api.whatsapp.SpeechToTextService.transcribe_twilio_media",
             return_value={"success": False, "message": "fallo stt"},
         ), patch(
-            "app.api.whatsapp.ConversationOrchestrator.handle_audio_message",
+            "app.services.whatsapp.whatsapp_service.WhatsAppService.process_audio_transcript",
             return_value="no debe ejecutarse",
         ), patch(
             "app.api.whatsapp.TextToSpeechService.generate_voice_note",
@@ -66,7 +66,7 @@ class TestWhatsAppAudioWebhook:
 
     def test_text_message_returns_media_when_tts_is_available(self):
         with patch(
-            "app.api.whatsapp.ConversationOrchestrator.handle_text_message",
+            "app.services.whatsapp.whatsapp_service.WhatsAppService.process_inbound_message",
             return_value="respuesta en voz",
         ), patch(
             "app.api.whatsapp.TextToSpeechService.generate_voice_note",
@@ -92,7 +92,7 @@ class TestWhatsAppAudioWebhook:
 
     def test_text_message_falls_back_to_text_when_tts_fails(self):
         with patch(
-            "app.api.whatsapp.ConversationOrchestrator.handle_text_message",
+            "app.services.whatsapp.whatsapp_service.WhatsAppService.process_inbound_message",
             return_value="respuesta en texto",
         ), patch(
             "app.api.whatsapp.TextToSpeechService.generate_voice_note",
@@ -115,7 +115,7 @@ class TestWhatsAppAudioWebhook:
 
     def test_handoff_message_returns_empty_twiml_without_auto_reply(self):
         with patch(
-            "app.api.whatsapp.ConversationOrchestrator.handle_text_message",
+            "app.services.whatsapp.whatsapp_service.WhatsAppService.process_inbound_message",
             return_value="",
         ), patch(
             "app.api.whatsapp.TextToSpeechService.generate_voice_note",

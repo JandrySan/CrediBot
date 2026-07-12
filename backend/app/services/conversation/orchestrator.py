@@ -14,6 +14,7 @@ from app.services.ai.ai_orchestrator import AIOrchestrator
 from app.services.conversation.conversation_state_service import ConversationStateService
 from app.services.conversation.credit_application_service import CreditApplicationService
 from app.state_machine.states import ConversationState
+from app.state_machine.transitions import can_transition
 
 
 class ConversationOrchestrator:
@@ -69,7 +70,11 @@ class ConversationOrchestrator:
             if history and history[-1].get("role") == "user":
                 history = history[:-1]
 
-            response = self.ai.generate_whatsapp_reply(text=text, history=history)
+            response = self.ai.generate_whatsapp_reply(
+                text=text,
+                history=history,
+                db=self.db,
+            )
             self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
             return response
 
@@ -245,6 +250,15 @@ class ConversationOrchestrator:
         )
 
     def _change_state(self, conversation, new_state: str, reason: str):
+        current = conversation.current_state
+
+        if current != new_state and not can_transition(current, new_state):
+            allowed = self.state_service.get_allowed_transition_names(current)
+            raise ValueError(
+                f"Transicion invalida: {current} -> {new_state}. "
+                f"Transiciones permitidas: {allowed}"
+            )
+
         conversation, previous_state, changed = self.conversation_repo.update_state_if_changed(
             conversation,
             new_state,

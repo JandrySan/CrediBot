@@ -8,7 +8,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 from app.database.session import get_db
 from app.services.audio.speech_to_text import SpeechToTextService
 from app.services.audio.text_to_speech import TextToSpeechService
-from app.services.conversation.orchestrator import ConversationOrchestrator
+from app.services.whatsapp.whatsapp_service import WhatsAppService
 from app.services.websocket.connection_manager import manager
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp"])
@@ -23,7 +23,6 @@ def _safe_int(value: str | int | None, default: int = 0) -> int:
 
 @router.get("/audio/{filename}")
 async def serve_generated_audio(filename: str):
-    # Block path traversal attempts and only expose files from the expected folder.
     if Path(filename).name != filename:
         raise HTTPException(status_code=400, detail="Nombre de archivo invalido")
 
@@ -64,6 +63,8 @@ async def receive_whatsapp_message(
         or message_type == "audio"
     )
 
+    whatsapp_service = WhatsAppService(db)
+
     if is_audio_media:
         stt_service = SpeechToTextService()
         stt_result = stt_service.transcribe_twilio_media(
@@ -93,23 +94,32 @@ async def receive_whatsapp_message(
         incoming_text = (stt_result.get("text") or "").strip()
         incoming_message_type = "AUDIO"
 
-    if not incoming_text:
-        response_text = "No recibi texto para procesar. Por favor, envia un mensaje de texto o audio."
-        twilio_response = MessagingResponse()
-        twilio_response.message(response_text)
-        return PlainTextResponse(str(twilio_response), media_type="application/xml")
+        if not incoming_text:
+            response_text = (
+                "Recibi tu audio, pero no contiene texto reconocible. "
+                "Por favor, intenta con otro audio o escribe tu mensaje."
+            )
+            twilio_response = MessagingResponse()
+            twilio_response.message(response_text)
+            return PlainTextResponse(str(twilio_response), media_type="application/xml")
 
-    orchestrator = ConversationOrchestrator(db)
-
-    if incoming_message_type == "AUDIO":
-        response_text = orchestrator.handle_audio_message(
+        response_text = whatsapp_service.process_audio_transcript(
             phone_number=From,
             transcript_text=incoming_text,
+            profile_name=ProfileName,
         )
     else:
-        response_text = orchestrator.handle_text_message(
+        if not incoming_text:
+            response_text = "No recibi texto para procesar. Por favor, envia un mensaje de texto o audio."
+            twilio_response = MessagingResponse()
+            twilio_response.message(response_text)
+            return PlainTextResponse(str(twilio_response), media_type="application/xml")
+
+        response_text = whatsapp_service.process_inbound_message(
             phone_number=From,
             text=incoming_text,
+            message_type=incoming_message_type,
+            profile_name=ProfileName,
         )
 
     twilio_response = MessagingResponse()
@@ -119,7 +129,8 @@ async def receive_whatsapp_message(
     bot_response_type = "NONE"
 
     if clean_response_text:
-        tts_result = TextToSpeechService().generate_voice_note(clean_response_text)
+        tts_service = TextToSpeechService()
+        tts_result = tts_service.generate_voice_note(clean_response_text)
         is_audio_reply = bool(tts_result.get("success")) and bool(tts_result.get("media_url"))
 
         if is_audio_reply:
