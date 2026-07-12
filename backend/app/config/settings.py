@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     AUDIO_REPLY_LANGUAGE: str = "es"
     AUDIO_REPLY_PUBLIC_BASE_URL: str = ""
 
+    CONVERSATION_SESSION_TIMEOUT_MINUTES: int = 60
+    CONVERSATION_CLEANUP_BATCH_SIZE: int = 100
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8"

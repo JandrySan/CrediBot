@@ -1,4 +1,7 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
+
+from app.models.conversation import Conversation
 from app.models.message import Message
 
 
@@ -21,6 +24,9 @@ class MessageRepository:
         )
 
         self.db.add(message)
+        self.db.query(Conversation).filter(
+            Conversation.id == conversation_id
+        ).update({Conversation.updated_at: func.now()})
         self.db.commit()
         self.db.refresh(message)
 

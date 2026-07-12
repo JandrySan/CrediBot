@@ -36,6 +36,7 @@ Componentes principales:
 12. WebSocket para notificar eventos al dashboard en tiempo real.
 13. Cierre manual de conversaciones en estado `HANDOFF`.
 14. Carga, listado, eliminacion logica y recuperacion de FAQs desde dashboard.
+15. Timeout configurable, restauracion y limpieza de sesiones de conversacion.
 
 ## Flujo principal
 
@@ -176,6 +177,7 @@ Funcionalidades:
 - Tomar una conversacion como asesor.
 - Responder al cliente por WhatsApp.
 - Cerrar una conversacion en `HANDOFF`.
+- Ejecutar limpieza manual de conversaciones abiertas expiradas.
 
 Estado actual: `GET /api/dashboard/conversations` lista conversaciones unidas con solicitudes de credito. Si un cliente tiene varias conversaciones o solicitudes, puede devolver mas de una fila para ese cliente. La deduplicacion por cliente queda pendiente.
 
@@ -211,6 +213,26 @@ Modelos principales:
 - `ConversationStateHistory`
 
 Nota: el campo `customers.preferred_response_type` esta pendiente. No existe en el modelo actual ni en la inicializacion de base de datos.
+
+## Sesiones de conversacion
+
+La Fase 4 esta implementada con timeout configurable y limpieza de sesiones abiertas.
+
+Variables:
+
+```env
+CONVERSATION_SESSION_TIMEOUT_MINUTES=60
+CONVERSATION_CLEANUP_BATCH_SIZE=100
+```
+
+Comportamiento:
+
+- `ConversationRepository.get_or_create_active()` reutiliza una conversacion abierta si no expiro.
+- Si la conversacion abierta expiro, se marca como `CLOSED`, pasa a estado `END`, guarda resultado `EXPIRADO` y se crea una nueva conversacion `ACTIVE`.
+- `ConversationRepository.restore_session()` devuelve una sesion abierta solo si existe y no expiro.
+- `ConversationManager.cleanup_expired_sessions()` cierra sesiones abiertas vencidas por lotes.
+- El startup ejecuta una limpieza inicial.
+- `MessageRepository.save_message()` actualiza `conversations.updated_at` para reflejar actividad reciente.
 
 Configuracion por defecto:
 
@@ -264,6 +286,10 @@ AUDIO_STT_REQUEST_TIMEOUT_SECONDS=20
 AUDIO_REPLY_ENABLED=true
 AUDIO_REPLY_LANGUAGE=es
 AUDIO_REPLY_PUBLIC_BASE_URL=
+
+# Conversation sessions
+CONVERSATION_SESSION_TIMEOUT_MINUTES=60
+CONVERSATION_CLEANUP_BATCH_SIZE=100
 
 # Twilio
 TWILIO_ENABLED=true
@@ -342,6 +368,7 @@ TWILIO_WEBHOOK_URL=https://<ngrok>/webhook/whatsapp
 - `POST /api/dashboard/conversations/{id}/take`
 - `POST /api/dashboard/conversations/{id}/reply`
 - `POST /api/dashboard/conversations/{id}/close`
+- `POST /api/dashboard/conversations/cleanup-expired`
 - `POST /api/dashboard/faq/upload`
 - `GET /api/dashboard/faq`
 - `DELETE /api/dashboard/faq/{id}`
@@ -355,10 +382,11 @@ TWILIO_WEBHOOK_URL=https://<ngrok>/webhook/whatsapp
 - Backend conecta con PostgreSQL.
 - Inicializacion de tablas ejecutada.
 - Build frontend pasa con `npm run build`.
-- Pruebas backend pasan con `DEBUG=false` inyectado en el entorno: `20 passed`.
+- Pruebas backend pasan con `DEBUG=false` inyectado en el entorno: `23 passed`.
 - Flujo de audio cubierto por pruebas.
 - Envio del asesor por Twilio validado a nivel de servicio.
 - FAQ/RAG cubierto por pruebas unitarias de carga y busqueda.
+- Sesiones de conversacion cubiertas por pruebas de restauracion, expiracion y limpieza.
 
 Estado de pruebas backend:
 

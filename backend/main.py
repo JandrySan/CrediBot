@@ -2,8 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database.init_db import init_db
+from app.database.session import SessionLocal
 from app.api.whatsapp import router as whatsapp_router
 from app.api.dashboard import router as dashboard_router
+from app.services.conversation.conversation_manager import ConversationManager
 
 from app.api.websocket import router as websocket_router
 
@@ -27,6 +29,11 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     init_db()
+    db = SessionLocal()
+    try:
+        ConversationManager(db).cleanup_expired_sessions()
+    finally:
+        db.close()
 
 
 app.include_router(whatsapp_router)

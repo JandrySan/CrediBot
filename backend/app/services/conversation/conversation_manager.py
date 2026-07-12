@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from sqlalchemy.orm import Session
 
+from app.config.settings import settings
 from app.repositories.customer_repository import CustomerRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.message_repository import MessageRepository
@@ -11,7 +12,12 @@ from app.state_machine.states import ConversationState
 
 
 class ConversationManager:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, session_timeout_minutes: int | None = None):
+        self.session_timeout_minutes = (
+            settings.CONVERSATION_SESSION_TIMEOUT_MINUTES
+            if session_timeout_minutes is None
+            else session_timeout_minutes
+        )
         self.customer_repo = CustomerRepository(db)
         self.conversation_repo = ConversationRepository(db)
         self.message_repo = MessageRepository(db)
@@ -23,7 +29,10 @@ class ConversationManager:
         text = (text or "").strip()
 
         customer = self.customer_repo.get_or_create(phone_number)
-        conversation = self.conversation_repo.get_or_create_active(customer.id)
+        conversation = self.conversation_repo.get_or_create_active(
+            customer.id,
+            timeout_minutes=self.session_timeout_minutes,
+        )
         application = self.application_repo.get_or_create_latest(customer.id)
 
         self.message_repo.save_message(
@@ -146,3 +155,19 @@ class ConversationManager:
         normalized = text.lower().strip()
         keywords = ["asesor", "humano", "persona", "agente", "ejecutivo"]
         return any(keyword in normalized for keyword in keywords)
+
+    def restore_session(self, phone_number: str):
+        customer = self.customer_repo.get_by_phone(phone_number)
+        if not customer:
+            return None
+
+        return self.conversation_repo.restore_session(
+            customer_id=customer.id,
+            timeout_minutes=self.session_timeout_minutes,
+        )
+
+    def cleanup_expired_sessions(self) -> int:
+        return self.conversation_repo.cleanup_expired_open_sessions(
+            timeout_minutes=self.session_timeout_minutes,
+            limit=settings.CONVERSATION_CLEANUP_BATCH_SIZE,
+        )

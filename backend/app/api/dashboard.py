@@ -10,6 +10,7 @@ from app.models.message import Message
 from app.models.credit_application import CreditApplication
 from app.services.rag.faq_loader import FAQLoader
 from app.services.rag.models import KnowledgeBase
+from app.services.conversation.conversation_manager import ConversationManager
 from app.services.whatsapp.twilio_service import TwilioWhatsAppService
 
 from fastapi import Form
@@ -106,6 +107,16 @@ def get_conversation_messages(
         }
         for message in messages
     ]
+
+
+@router.post("/conversations/cleanup-expired")
+def cleanup_expired_conversations(db: Session = Depends(get_db)):
+    closed_count = ConversationManager(db).cleanup_expired_sessions()
+
+    return {
+        "success": True,
+        "closed_count": closed_count,
+    }
 
 
 @router.post("/faq/upload")

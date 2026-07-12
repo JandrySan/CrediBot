@@ -16,6 +16,7 @@ CrediBot es un MVP de asistente de precalificacion de creditos por WhatsApp. Aut
 - Audio STT: Groq por defecto, faster-whisper local opcional.
 - Audio TTS: gTTS + conversion a OGG/Opus con PyAV.
 - FAQ/RAG: busqueda por palabras clave con reranking opcional via Groq.
+- Sesiones: timeout configurable, restauracion y limpieza de conversaciones abiertas.
 - Tiempo real: WebSocket.
 
 ## Arquitectura
@@ -323,6 +324,7 @@ Endpoints:
 - `POST /api/dashboard/conversations/{id}/take`
 - `POST /api/dashboard/conversations/{id}/reply`
 - `POST /api/dashboard/conversations/{id}/close`
+- `POST /api/dashboard/conversations/cleanup-expired`
 - `POST /api/dashboard/faq/upload`
 - `GET /api/dashboard/faq`
 - `DELETE /api/dashboard/faq/{id}`
@@ -334,6 +336,32 @@ Comportamiento:
 - Permite tomar conversacion como asesor.
 - Permite responder al cliente por WhatsApp.
 - Permite cerrar conversacion en HANDOFF con resolucion (APPROVED/DENIED/RESOLVED).
+- Permite disparar limpieza manual de conversaciones abiertas expiradas.
+
+## Sesiones de conversacion
+
+La Fase 4 esta implementada con timeout configurable, restauracion y limpieza de sesiones.
+
+Configuracion:
+
+```env
+CONVERSATION_SESSION_TIMEOUT_MINUTES=60
+CONVERSATION_CLEANUP_BATCH_SIZE=100
+```
+
+Comportamiento:
+
+- `ConversationRepository.get_or_create_active(customer_id, timeout_minutes=None)` reutiliza una conversacion `ACTIVE` o `HANDOFF` si no expiro.
+- Si la conversacion abierta expiro, `ConversationRepository.close_expired()` la marca como `CLOSED`, mueve `current_state` a `END`, asigna `result=EXPIRADO` si no tenia resultado y crea una nueva conversacion `ACTIVE`.
+- `ConversationRepository.restore_session(customer_id, timeout_minutes=None)` devuelve la sesion abierta si existe y no expiro; si expiro, la cierra y devuelve `None`.
+- `ConversationRepository.cleanup_expired_open_sessions()` cierra sesiones abiertas vencidas por lotes.
+- `ConversationManager` expone `restore_session(phone_number)` y `cleanup_expired_sessions()`, usando `CONVERSATION_SESSION_TIMEOUT_MINUTES`.
+- `MessageRepository.save_message()` actualiza `conversations.updated_at` para que el timeout se base en actividad real.
+- El startup ejecuta una limpieza inicial despues de `init_db()`.
+
+Endpoint operativo:
+
+- `POST /api/dashboard/conversations/cleanup-expired`: cierra conversaciones abiertas expiradas y devuelve `closed_count`.
 
 ## Respuesta de asesor humano
 
@@ -421,6 +449,10 @@ AUDIO_REPLY_ENABLED=true
 AUDIO_REPLY_LANGUAGE=es
 AUDIO_REPLY_PUBLIC_BASE_URL=
 
+# Conversation sessions
+CONVERSATION_SESSION_TIMEOUT_MINUTES=60
+CONVERSATION_CLEANUP_BATCH_SIZE=100
+
 # Twilio
 TWILIO_ENABLED=true
 TWILIO_ACCOUNT_SID=AC...
@@ -450,6 +482,7 @@ TWILIO_WEBHOOK_URL=https://.../webhook/whatsapp
 - `POST /api/dashboard/conversations/{id}/take`
 - `POST /api/dashboard/conversations/{id}/reply`
 - `POST /api/dashboard/conversations/{id}/close`
+- `POST /api/dashboard/conversations/cleanup-expired`
 
 ### WebSocket
 
@@ -461,10 +494,11 @@ TWILIO_WEBHOOK_URL=https://.../webhook/whatsapp
 - `init_db()` ejecuta correctamente.
 - Endpoint de conversaciones responde `200`.
 - Frontend compila con `npm run build`.
-- Pruebas backend pasan con `DEBUG=false` inyectado en el entorno: `20 passed`.
+- Pruebas backend pasan con `DEBUG=false` inyectado en el entorno: `23 passed`.
 - Flujo de audio esta cubierto por pruebas.
 - Maquina de estados con transiciones validadas.
 - FAQ/RAG esta cubierto por pruebas unitarias de carga y busqueda.
+- Sesiones de conversacion estan cubiertas por pruebas de restauracion, expiracion y limpieza.
 
 Estado actual de pruebas backend:
 
@@ -486,12 +520,6 @@ Estado actual de pruebas backend:
 - Despliegue productivo y observabilidad.
 
 ## Proximas fases (disponibles para colaboradores)
-
-### Fase 4: Mejora de sesiones
-
-- Timeouts y limpieza de sesiones expiradas (cron o tarea programada).
-- `restore_session()` en `ConversationRepository` para reanudar sesiones interrumpidas.
-- Timeout configurable en `ConversationManager`.
 
 ### Fase 5: Frontend (Dashboard)
 
