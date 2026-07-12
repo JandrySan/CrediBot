@@ -2,6 +2,7 @@
 
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Virtual Environment
 
@@ -25,6 +26,12 @@ alembic/versions/
 *.log
 *.db
 backend/work/
+
+# Frontend
+
+node_modules/
+dist/
+*.tsbuildinfo
 
 # OS
 

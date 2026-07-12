@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "CrediBot"
     DEBUG: bool = True
     AI_ONLY_MODE: bool = False
+    BACKEND_CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
     DATABASE_URL: str = ""
 
     DB_HOST: str = "localhost"
@@ -52,6 +53,14 @@ class Settings(BaseSettings):
             f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.BACKEND_CORS_ORIGINS.split(",")
+            if origin.strip()
+        ]
 
 
 settings = Settings()
