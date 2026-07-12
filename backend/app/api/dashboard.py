@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -8,12 +8,27 @@ from app.models.customer import Customer
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.credit_application import CreditApplication
+from app.services.rag.faq_loader import FAQLoader
+from app.services.rag.models import KnowledgeBase
 from app.services.whatsapp.twilio_service import TwilioWhatsAppService
 
 from fastapi import Form
 from app.services.websocket.connection_manager import manager
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
+
+
+def _serialize_faq(faq: KnowledgeBase) -> dict:
+    return {
+        "id": faq.id,
+        "question": faq.question,
+        "answer": faq.answer,
+        "category": faq.category,
+        "keywords": faq.keyword_list(),
+        "is_active": faq.is_active,
+        "created_at": faq.created_at,
+        "updated_at": faq.updated_at,
+    }
 
 
 @router.get("/stats")
@@ -91,6 +106,69 @@ def get_conversation_messages(
         }
         for message in messages
     ]
+
+
+@router.post("/faq/upload")
+async def upload_faq(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    raw_content = (await file.read()).decode("utf-8-sig")
+    filename = (file.filename or "").lower()
+    loader = FAQLoader(db)
+
+    try:
+        if filename.endswith(".csv"):
+            result = loader.load_csv(raw_content)
+        else:
+            result = loader.load_json(raw_content)
+    except ValueError as exc:
+        return {
+            "success": False,
+            "message": str(exc),
+        }
+
+    return {
+        "success": True,
+        "message": "FAQs cargadas correctamente",
+        **result,
+    }
+
+
+@router.get("/faq")
+def list_faqs(db: Session = Depends(get_db)):
+    faqs = (
+        db.query(KnowledgeBase)
+        .filter(KnowledgeBase.is_active.is_(True))
+        .order_by(KnowledgeBase.id.desc())
+        .all()
+    )
+
+    return [_serialize_faq(faq) for faq in faqs]
+
+
+@router.delete("/faq/{faq_id}")
+def delete_faq(faq_id: int, db: Session = Depends(get_db)):
+    faq = (
+        db.query(KnowledgeBase)
+        .filter(KnowledgeBase.id == faq_id)
+        .first()
+    )
+
+    if not faq:
+        return {
+            "success": False,
+            "message": "FAQ no encontrada",
+        }
+
+    faq.is_active = False
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "FAQ eliminada",
+        "faq_id": faq_id,
+    }
 
 @router.post("/conversations/{conversation_id}/take")
 def take_conversation(

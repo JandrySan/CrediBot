@@ -15,6 +15,7 @@ CrediBot es un MVP de asistente de precalificacion de creditos por WhatsApp. Aut
 - IA: Groq.
 - Audio STT: Groq por defecto, faster-whisper local opcional.
 - Audio TTS: gTTS + conversion a OGG/Opus con PyAV.
+- FAQ/RAG: busqueda por palabras clave con reranking opcional via Groq.
 - Tiempo real: WebSocket.
 
 ## Arquitectura
@@ -53,6 +54,7 @@ CrediBot/
 - `CreditApplication`: solicitud de credito, monto, plazo, ingresos, resultado y motivo.
 - `AIAnalysis`: resultado del analisis IA por conversacion.
 - `ConversationStateHistory`: historial de transiciones de estado.
+- `KnowledgeBase`: FAQs activas para politicas, requisitos, tasas, documentos y condiciones.
 
 ## Flujo WhatsApp
 
@@ -66,8 +68,10 @@ El webhook ahora usa `WhatsAppService` para procesar los mensajes:
 4. Se delega en `WhatsAppService.process_inbound_message()` o `process_audio_transcript()`.
 5. `WhatsAppService` internamente usa `ConversationOrchestrator` para el flujo estructurado o `AIOrchestrator` para el modo `AI_ONLY_MODE`.
 6. Se genera respuesta de texto.
-7. Si `TextToSpeechService.generate_voice_note()` tiene exito, se responde con media; si no, con texto plano.
+7. Si `AUDIO_REPLY_ENABLED=true` y `TextToSpeechService.generate_voice_note()` tiene exito, se responde con media; si no, con texto plano.
 8. Se emite evento WebSocket `NEW_MESSAGE` o `AUDIO_TRANSCRIPTION_FAILED`.
+
+Nota: el webhook no aplica actualmente una preferencia de respuesta por cliente. La salida de audio depende de la configuracion global `AUDIO_REPLY_ENABLED`.
 
 ## Estados de conversacion
 
@@ -124,13 +128,15 @@ La IA no decide la aprobacion. La decision sale del motor de reglas.
 
 Directorio: `backend/app/services/tools/`
 
-El sistema de tools permite que la IA invoque funciones especificas (function calling) de forma automatica. Cuando el usuario hace una pregunta que requiere calculos, consultas a DB o busqueda en politicas, la IA detecta la intencion y llama a la tool correspondiente.
+El sistema de tools esta parcialmente implementado. La intencion es permitir que la IA invoque funciones especificas (function calling) para calculos, consultas a DB o busqueda en politicas.
 
 ### Arquitectura
 
 - `tool_registry.py` — Registro central singleton. Decorador `@tool(name, description, parameters, requires_db)` para registrar funciones como tools.
 - `tool_executor.py` — `ToolExecutor` recibe las `tool_calls` de Groq, busca la tool registrada, la ejecuta y retorna el resultado.
 - `tool_registry.to_openai_specs()` — Genera las definiciones en formato JSON Schema que Groq entiende.
+
+Brecha actual: las tools se registran solo cuando se importan sus modulos (`financial_tools.py`, `customer_tools.py`, `policy_tools.py`). Actualmente no hay un import central en startup o en `AIOrchestrator`, por lo que el registro puede quedar vacio.
 
 ### Tools registradas
 
@@ -143,7 +149,7 @@ El sistema de tools permite que la IA invoque funciones especificas (function ca
 
 ### Integracion con IA
 
-`AIGateway.generate_with_tools()` extiende `generate_chat()` para:
+Objetivo esperado de `AIGateway.generate_with_tools()`:
 
 1. Enviar las definiciones de tools a Groq via el parametro `tools`.
 2. Si la respuesta contiene `tool_calls`, extraer el nombre, argumentos y `tool_call_id`.
@@ -152,6 +158,8 @@ El sistema de tools permite que la IA invoque funciones especificas (function ca
 5. Soporta multiples rondas de tool calling (max 5 por defecto).
 
 `AIOrchestrator.generate_whatsapp_reply()` integra todo: recibe el mensaje del usuario, construye el historial, pasa las tools disponibles, y orquesta el ciclo de llamadas automaticamente.
+
+Estado actual: `AIGateway.generate_with_tools()` detecta `tool_calls`, pero no ejecuta las tools dentro del loop y agrega mensajes `tool` vacios. Luego `AIOrchestrator` intenta ejecutar las tools en una segunda etapa. Este flujo necesita correccion para conservar el mensaje assistant con `tool_calls`, ejecutar herramientas con resultados reales y devolver esos resultados al modelo en el formato esperado.
 
 ### Como agregar una tool nueva
 
@@ -196,8 +204,45 @@ Servicios en `backend/app/services/ai/`:
 AI_ONLY_MODE=false
 ```
 
-Con `AI_ONLY_MODE=false` el sistema usa estados y reglas de negocio. Las tools funcionan en ambos modos.
-Con `AI_ONLY_MODE=true` la IA responde conversacionalmente sin reglas y tambien puede usar tools.
+Con `AI_ONLY_MODE=false` el sistema usa estados y reglas de negocio. Con `AI_ONLY_MODE=true` la IA responde conversacionalmente sin reglas.
+
+Nota: el uso de tools requiere corregir la carga de modulos y el ciclo de tool calling descrito arriba.
+
+## FAQ/RAG
+
+Directorio: `backend/app/services/rag/`
+
+La Fase 3 esta implementada como un sistema FAQ/RAG basico:
+
+- `models.py`: define `KnowledgeBase` con `id`, `question`, `answer`, `category`, `keywords`, `is_active`, `created_at` y `updated_at`.
+- `faq_loader.py`: carga FAQs desde JSON o CSV. Acepta campos en ingles (`question`, `answer`, `category`, `keywords`) o espanol (`pregunta`, `respuesta`, `categoria`, `palabras_clave`).
+- `retrieval_service.py`: busca FAQs activas por coincidencia de palabras clave y texto. Si Groq esta disponible, intenta reranking con LLM; si no, usa ranking local.
+- `embedding_service.py`: placeholder para una futura integracion con embeddings o pgvector.
+
+Endpoints de dashboard:
+
+- `POST /api/dashboard/faq/upload`: carga archivo JSON o CSV.
+- `GET /api/dashboard/faq`: lista FAQs activas.
+- `DELETE /api/dashboard/faq/{id}`: eliminacion logica, marca `is_active=false`.
+
+Integracion conversacional:
+
+- En `AIOrchestrator.generate_whatsapp_reply()`, si hay una sesion DB disponible, `RetrievalService` construye contexto FAQ y lo agrega al prompt del modelo.
+- En `ConversationOrchestrator`, si el usuario hace una pregunta sobre requisitos, documentos, tasas, politicas, condiciones o plazo maximo, se busca una FAQ relevante. Si existe, el bot responde esa informacion y ofrece continuar con la precalificacion.
+- `ResponseGenerator.generate()` acepta `faq_context` para pulir la respuesta sin inventar datos fuera de la FAQ.
+
+Formato JSON soportado:
+
+```json
+[
+  {
+    "question": "Cuales son los requisitos?",
+    "answer": "Documento de identidad e ingresos comprobables.",
+    "category": "requisitos",
+    "keywords": ["requisitos", "documentos"]
+  }
+]
+```
 
 ## WhatsApp Service
 
@@ -237,7 +282,9 @@ GET /webhook/audio/{filename}
 
 ## Preferencia texto/audio
 
-Campo:
+Pendiente de implementacion.
+
+La documentacion anterior describia este campo:
 
 ```text
 customers.preferred_response_type
@@ -248,7 +295,9 @@ Valores:
 - `TEXT`
 - `AUDIO`
 
-Frases que activan audio:
+Pero el modelo `Customer` actual no incluye `preferred_response_type`, `init_db()` no crea ni migra esa columna y el webhook no cambia preferencia por frases del usuario.
+
+Frases deseadas para una implementacion futura:
 
 - "respondeme en audio"
 - "quiero que me respondas en audio"
@@ -274,12 +323,14 @@ Endpoints:
 - `POST /api/dashboard/conversations/{id}/take`
 - `POST /api/dashboard/conversations/{id}/reply`
 - `POST /api/dashboard/conversations/{id}/close`
+- `POST /api/dashboard/faq/upload`
+- `GET /api/dashboard/faq`
+- `DELETE /api/dashboard/faq/{id}`
 
 Comportamiento:
 
 - Lista conversaciones con datos de cliente y solicitud.
-- Devuelve solo una conversacion por cliente para evitar duplicados.
-- Usa la conversacion mas reciente y la solicitud mas reciente.
+- Estado actual: si un cliente tiene varias conversaciones o varias solicitudes, puede aparecer mas de una fila para el mismo cliente.
 - Permite tomar conversacion como asesor.
 - Permite responder al cliente por WhatsApp.
 - Permite cerrar conversacion en HANDOFF con resolucion (APPROVED/DENIED/RESOLVED).
@@ -292,10 +343,12 @@ Flujo:
 
 1. El asesor envia mensaje desde el dashboard.
 2. El backend obtiene la conversacion y cliente.
-3. `TwilioWhatsAppService` envia el mensaje al numero del cliente.
-4. Si Twilio responde exito, se guarda el mensaje como `OUTBOUND`.
-5. Si Twilio falla, no se guarda como enviado.
+3. El backend guarda el mensaje como `OUTBOUND`.
+4. `TwilioWhatsAppService` intenta enviar el mensaje al numero del cliente.
+5. Si Twilio falla, el endpoint devuelve `success=false`, pero el mensaje ya quedo guardado.
 6. Se emite evento WebSocket `AGENT_REPLY`.
+
+Pendiente: decidir si el mensaje debe guardarse solo despues de un envio exitoso o si debe persistirse con estado de fallo.
 
 ## WebSocket
 
@@ -336,7 +389,7 @@ Si `DATABASE_URL` esta vacio, se construye:
 postgresql+psycopg2://<DB_USER>:<DB_PASSWORD>@<DB_HOST>:<DB_PORT>/<DB_NAME>
 ```
 
-`init_db()` crea tablas y asegura la columna `customers.preferred_response_type` en bases existentes.
+`init_db()` crea las tablas declaradas en los modelos actuales. No ejecuta migraciones incrementales ni asegura la columna `customers.preferred_response_type`.
 
 ## Variables de entorno importantes
 
@@ -407,48 +460,32 @@ TWILIO_WEBHOOK_URL=https://.../webhook/whatsapp
 - Backend conecta con PostgreSQL.
 - `init_db()` ejecuta correctamente.
 - Endpoint de conversaciones responde `200`.
-- Dashboard devuelve una fila por cliente.
-- Pruebas backend pasan (18 tests).
-- Frontend compila.
+- Frontend compila con `npm run build`.
+- Pruebas backend pasan con `DEBUG=false` inyectado en el entorno: `20 passed`.
 - Flujo de audio esta cubierto por pruebas.
-- Preferencia texto/audio esta cubierta por pruebas.
 - Maquina de estados con transiciones validadas.
-- Sistema de tools con registro, ejecucion e integracion con Groq.
+- FAQ/RAG esta cubierto por pruebas unitarias de carga y busqueda.
+
+Estado actual de pruebas backend:
+
+- Al ejecutar `.\.venv\Scripts\python.exe -m pytest tests -q` desde `backend/`, la coleccion falla si `backend/.env` contiene `DEBUG=release`.
+- `settings.DEBUG` esta tipado como booleano, por lo que debe usar valores como `true` o `false`, o debe aislarse la configuracion de test.
 
 ## Brechas pendientes
 
 - Completar credenciales reales de Twilio y Groq.
+- Corregir `DEBUG` en `backend/.env` para permitir ejecucion de tests.
 - Configurar `TWILIO_WEBHOOK_URL` con ngrok o dominio publico.
+- Implementar o retirar la preferencia por cliente para texto/audio.
+- Cargar automaticamente los modulos de tools y corregir el ciclo completo de tool calling.
+- Alinear el guardado de mensajes del asesor con el resultado real de Twilio.
+- Deduplicar conversaciones por cliente en dashboard si ese sigue siendo el comportamiento esperado.
 - Validar firma de webhook de Twilio.
 - Autenticacion y autorizacion del dashboard.
 - Rate limiting y endurecimiento de seguridad.
 - Despliegue productivo y observabilidad.
 
 ## Proximas fases (disponibles para colaboradores)
-
-### Fase 3: RAG (FAQ)
-
-Implementar un sistema de preguntas frecuentes con busqueda semantica.
-
-Archivos a crear en `backend/app/services/rag/`:
-
-- `models.py` — Modelo SQLAlchemy `KnowledgeBase` con campos: id, question, answer, category, keywords (array de texto), is_active.
-- `faq_loader.py` — Carga FAQs desde archivo JSON o CSV a la base de datos.
-- `retrieval_service.py` — Busqueda por palabras clave + reranking con LLM.
-- `embedding_service.py` — Placeholder para futuro pgvector.
-
-Endpoints a crear en dashboard:
-
-- `POST /api/dashboard/faq/upload` — subir archivo JSON con FAQs.
-- `GET /api/dashboard/faq` — listar FAQs.
-- `DELETE /api/dashboard/faq/{id}` — eliminar FAQ.
-
-Flujo de integracion:
-
-1. Usuario pregunta algo sobre politicas/terminos.
-2. `retrieval_service.py` busca por keywords en la tabla `knowledge_base`.
-3. Obtiene top 5 candidatos y envia a Groq para reranking.
-4. Resultado mas relevante se inyecta como contexto en `ResponseGenerator`.
 
 ### Fase 4: Mejora de sesiones
 

@@ -13,6 +13,7 @@ from app.repositories.message_repository import MessageRepository
 from app.services.ai.ai_orchestrator import AIOrchestrator
 from app.services.conversation.conversation_state_service import ConversationStateService
 from app.services.conversation.credit_application_service import CreditApplicationService
+from app.services.rag.retrieval_service import RetrievalService
 from app.state_machine.states import ConversationState
 from app.state_machine.transitions import can_transition
 
@@ -101,6 +102,11 @@ class ConversationOrchestrator:
         if self._is_handoff_requested(text, ai_data):
             self._handoff(conversation)
             return ""
+
+        faq_response = self._answer_faq_if_applicable(text)
+        if faq_response:
+            self._save_message(conversation.id, "OUTBOUND", faq_response, "TEXT")
+            return faq_response
 
         self.credit_service.apply_extracted_data(
             customer=customer,
@@ -233,6 +239,46 @@ class ConversationOrchestrator:
         return any(
             word in normalized
             for word in ["asesor", "humano", "persona", "agente", "ejecutivo"]
+        )
+
+    def _answer_faq_if_applicable(self, text: str) -> str:
+        normalized = (text or "").lower().strip()
+        if not normalized:
+            return ""
+
+        question_markers = [
+            "?",
+            "¿",
+            "requisito",
+            "documento",
+            "politica",
+            "política",
+            "tasa",
+            "interes",
+            "interés",
+            "condicion",
+            "condición",
+            "plazo maximo",
+            "plazo máximo",
+            "pago anticipado",
+        ]
+
+        if not any(marker in normalized for marker in question_markers):
+            return ""
+
+        faq = RetrievalService(self.db).best_match(text)
+        if not faq:
+            return ""
+
+        base_response = (
+            f"{faq.answer} "
+            "Si quieres, tambien puedo ayudarte con tu precalificacion de credito."
+        )
+        faq_context = f"Pregunta: {faq.question}\nRespuesta: {faq.answer}"
+        return self.ai.response_generator.generate(
+            base_message=base_response,
+            last_user_message=text,
+            faq_context=faq_context,
         )
 
     def _save_message(

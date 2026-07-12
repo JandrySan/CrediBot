@@ -4,6 +4,7 @@ from app.services.ai.response_generator import ResponseGenerator
 from app.services.ai.ai_gateway import AIGateway
 from app.services.tools.tool_registry import tool_registry
 from app.services.tools.tool_executor import ToolExecutor
+from app.services.rag.retrieval_service import RetrievalService
 
 from sqlalchemy.orm import Session
 
@@ -36,25 +37,38 @@ class AIOrchestrator:
         history: list[dict] | None = None,
         db: Session | None = None,
     ) -> str:
+        faq_context = ""
+        if db is not None:
+            faq_context = RetrievalService(db).build_context(text, limit=3)
+
+        system_content = (
+            "Eres CrediBot, un asistente por WhatsApp claro, amable y profesional. "
+            "Responde en espanol, de forma breve y natural. "
+            "No inventes datos ni prometas aprobaciones definitivas.\n\n"
+            "Tienes acceso a herramientas que puedes usar cuando sea relevante:\n"
+            "- calcular_amortizacion: cuando el usuario pregunte por cuotas mensuales, "
+            "tablas de pago, intereses, o cuanto pagaria al mes.\n"
+            "- consultar_estado_cliente: cuando quiera saber el estado de su solicitud "
+            "o historial de creditos.\n"
+            "- obtener_reglas_credito: cuando pregunte por que fue aprobado o rechazado, "
+            "o cuales son las reglas del credito.\n"
+            "- consultar_politica: cuando pregunte sobre requisitos, documentos, "
+            "plazos, tasas de interes, o terminos y condiciones.\n\n"
+            "Usa estas herramientas cuando el usuario haga preguntas especificas. "
+            "No las uses si no es necesario."
+        )
+
+        if faq_context:
+            system_content += (
+                "\n\nContexto FAQ disponible para responder preguntas de politicas, "
+                "requisitos o condiciones:\n"
+                f"{faq_context}"
+            )
+
         messages: list[dict] = [
             {
                 "role": "system",
-                "content": (
-                    "Eres CrediBot, un asistente por WhatsApp claro, amable y profesional. "
-                    "Responde en espanol, de forma breve y natural. "
-                    "No inventes datos ni prometas aprobaciones definitivas.\n\n"
-                    "Tienes acceso a herramientas que puedes usar cuando sea relevante:\n"
-                    "- calcular_amortizacion: cuando el usuario pregunte por cuotas mensuales, "
-                    "tablas de pago, intereses, o cuanto pagaria al mes.\n"
-                    "- consultar_estado_cliente: cuando quiera saber el estado de su solicitud "
-                    "o historial de creditos.\n"
-                    "- obtener_reglas_credito: cuando pregunte por que fue aprobado o rechazado, "
-                    "o cuales son las reglas del credito.\n"
-                    "- consultar_politica: cuando pregunte sobre requisitos, documentos, "
-                    "plazos, tasas de interes, o terminos y condiciones.\n\n"
-                    "Usa estas herramientas cuando el usuario haga preguntas especificas. "
-                    "No las uses si no es necesario."
-                ),
+                "content": system_content,
             }
         ]
 

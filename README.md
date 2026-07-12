@@ -2,7 +2,7 @@
 
 Asistente de precalificacion de creditos por WhatsApp.
 
-Actualizado: 2026-07-09
+Actualizado: 2026-07-12
 
 ## Estado actual
 
@@ -15,8 +15,9 @@ Componentes principales:
 - Frontend con React + TypeScript + MUI.
 - Integracion WhatsApp mediante Twilio Sandbox.
 - IA con Groq para intencion, extraccion de datos y apoyo conversacional controlado.
+- FAQ/RAG basico para responder preguntas de politicas, requisitos y condiciones.
 - Transcripcion de audio de WhatsApp a texto.
-- Respuesta del bot por texto o nota de voz.
+- Respuesta del bot por texto, o por nota de voz cuando `AUDIO_REPLY_ENABLED=true`.
 - Dashboard de asesor con WebSocket para actualizacion en tiempo real.
 
 ## Funcionalidades
@@ -27,14 +28,14 @@ Componentes principales:
 4. Extraccion de datos con IA: nombre, monto, plazo e ingresos.
 5. Motor de reglas para resultado preliminar.
 6. Persistencia de clientes, conversaciones, mensajes, solicitudes, analisis IA e historial de estados.
-7. Preferencia por cliente para responder en texto o audio.
-8. Generacion de notas de voz en formato OGG/Opus.
-9. Exposicion publica de audios generados en `GET /webhook/audio/{filename}`.
-10. Handoff a asesor humano cuando el cliente lo solicita.
-11. Dashboard para ver conversaciones, mensajes y datos de solicitud.
-12. Respuesta del asesor desde dashboard hacia WhatsApp.
-13. WebSocket para notificar eventos al dashboard en tiempo real.
-14. Consulta de conversaciones sin duplicar clientes: se muestra la conversacion mas reciente por cliente.
+7. Generacion opcional de notas de voz en formato OGG/Opus.
+8. Exposicion publica de audios generados en `GET /webhook/audio/{filename}`.
+9. Handoff a asesor humano cuando el cliente lo solicita.
+10. Dashboard para ver conversaciones, mensajes y datos de solicitud.
+11. Respuesta del asesor desde dashboard hacia WhatsApp.
+12. WebSocket para notificar eventos al dashboard en tiempo real.
+13. Cierre manual de conversaciones en estado `HANDOFF`.
+14. Carga, listado, eliminacion logica y recuperacion de FAQs desde dashboard.
 
 ## Flujo principal
 
@@ -63,7 +64,7 @@ Cliente WhatsApp
 9. Si faltan datos, se pregunta el siguiente campo requerido.
 10. Si ya estan completos los datos, se aplica el motor de reglas.
 11. Se guarda la respuesta outbound.
-12. El bot responde por texto o audio, segun la preferencia del cliente.
+12. El bot responde por texto; si `AUDIO_REPLY_ENABLED=true`, intenta responder con audio y cae a texto si falla.
 13. Se emite un evento WebSocket para actualizar el dashboard.
 
 ## Estados de conversacion
@@ -77,6 +78,7 @@ Los estados estan definidos en `backend/app/state_machine/states.py`:
 - `ASK_INCOME`
 - `SHOW_RESULT`
 - `HANDOFF`
+- `END`
 
 ## Reglas de negocio
 
@@ -100,6 +102,33 @@ Servicios principales:
 - `backend/app/services/ai/intent_detector.py`: clasifica intencion.
 - `backend/app/services/ai/entity_extractor.py`: extrae datos de credito.
 - `backend/app/services/ai/response_generator.py`: pule respuestas sin cambiar datos ni reglas.
+- `backend/app/services/rag/retrieval_service.py`: busca FAQs por palabras clave y reranking opcional con Groq.
+
+## FAQ/RAG
+
+La Fase 3 esta implementada en `backend/app/services/rag/`.
+
+Componentes:
+
+- `models.py`: modelo SQLAlchemy `KnowledgeBase`.
+- `faq_loader.py`: carga FAQs desde JSON o CSV.
+- `retrieval_service.py`: busqueda por palabras clave y reranking opcional con Groq.
+- `embedding_service.py`: placeholder para una futura integracion con embeddings/pgvector.
+
+El flujo actual usa FAQs para preguntas sobre requisitos, documentos, tasas, politicas, condiciones y temas similares. En modo conversacional, el contexto FAQ se agrega al prompt de IA. En el flujo estructurado, si el usuario hace una pregunta de politica con una FAQ relevante, el bot responde esa FAQ y luego ofrece continuar con la precalificacion.
+
+Formato JSON aceptado por upload:
+
+```json
+[
+  {
+    "question": "Cuales son los requisitos?",
+    "answer": "Documento de identidad e ingresos comprobables.",
+    "category": "requisitos",
+    "keywords": ["requisitos", "documentos"]
+  }
+]
+```
 
 Modo de operacion:
 
@@ -126,24 +155,13 @@ CrediBot soporta audio en dos direcciones:
 - Luego lo convierte a OGG/Opus.
 - Twilio descarga el archivo desde `GET /webhook/audio/{filename}`.
 - Si falla la generacion de audio, el bot responde en texto.
+- Estado actual: la respuesta en audio se controla de forma global con `AUDIO_REPLY_ENABLED`.
 
 ### Preferencia por cliente
 
-El cliente puede pedir:
+Pendiente de implementacion.
 
-```text
-Quiero que me respondas en audio
-```
-
-El sistema guarda `preferred_response_type=AUDIO` en `customers`.
-
-Tambien puede volver a texto con frases como:
-
-```text
-Respondeme en texto
-No me respondas en audio
-Solo texto
-```
+La documentacion anterior mencionaba `customers.preferred_response_type`, pero el modelo `Customer` actual no tiene ese campo y el webhook no interpreta frases como "respondeme en audio" o "solo texto" para cambiar una preferencia por cliente.
 
 ## Dashboard del asesor
 
@@ -153,14 +171,13 @@ Funcionalidades:
 
 - Ver estadisticas generales.
 - Listar conversaciones.
-- Buscar por cliente o telefono.
-- Filtrar por estado.
 - Ver mensajes de una conversacion.
 - Ver datos de credito del cliente.
 - Tomar una conversacion como asesor.
 - Responder al cliente por WhatsApp.
+- Cerrar una conversacion en `HANDOFF`.
 
-El backend devuelve solo una fila por cliente en `GET /api/dashboard/conversations`, usando la conversacion mas reciente y la solicitud mas reciente para evitar duplicados.
+Estado actual: `GET /api/dashboard/conversations` lista conversaciones unidas con solicitudes de credito. Si un cliente tiene varias conversaciones o solicitudes, puede devolver mas de una fila para ese cliente. La deduplicacion por cliente queda pendiente.
 
 ## Respuesta del asesor por WhatsApp
 
@@ -174,9 +191,11 @@ Flujo:
 
 1. El asesor escribe desde el dashboard.
 2. El backend obtiene el cliente y telefono.
-3. `TwilioWhatsAppService` envia el mensaje por WhatsApp.
-4. Si Twilio confirma exito, se guarda el mensaje como `OUTBOUND`.
-5. Si Twilio falla, no se guarda como enviado y el dashboard muestra error.
+3. El backend guarda el mensaje como `OUTBOUND`.
+4. `TwilioWhatsAppService` intenta enviar el mensaje por WhatsApp.
+5. Si Twilio falla, el endpoint devuelve `success=false`, pero el mensaje ya quedo guardado en la base de datos.
+
+Pendiente: cambiar el orden para guardar el mensaje solo despues de confirmar envio exitoso, o guardar un estado explicito de fallo.
 
 ## Base de datos
 
@@ -191,9 +210,7 @@ Modelos principales:
 - `AIAnalysis`
 - `ConversationStateHistory`
 
-Campo relevante agregado:
-
-- `customers.preferred_response_type`: guarda `TEXT` o `AUDIO`.
+Nota: el campo `customers.preferred_response_type` esta pendiente. No existe en el modelo actual ni en la inicializacion de base de datos.
 
 Configuracion por defecto:
 
@@ -324,6 +341,10 @@ TWILIO_WEBHOOK_URL=https://<ngrok>/webhook/whatsapp
 - `GET /api/dashboard/conversations/{id}/messages`
 - `POST /api/dashboard/conversations/{id}/take`
 - `POST /api/dashboard/conversations/{id}/reply`
+- `POST /api/dashboard/conversations/{id}/close`
+- `POST /api/dashboard/faq/upload`
+- `GET /api/dashboard/faq`
+- `DELETE /api/dashboard/faq/{id}`
 
 ### WebSocket
 
@@ -333,17 +354,26 @@ TWILIO_WEBHOOK_URL=https://<ngrok>/webhook/whatsapp
 
 - Backend conecta con PostgreSQL.
 - Inicializacion de tablas ejecutada.
-- Dashboard devuelve conversaciones sin duplicar clientes.
-- Pruebas backend pasan.
-- Build frontend pasa.
+- Build frontend pasa con `npm run build`.
+- Pruebas backend pasan con `DEBUG=false` inyectado en el entorno: `20 passed`.
 - Flujo de audio cubierto por pruebas.
-- Preferencia texto/audio cubierta por pruebas.
 - Envio del asesor por Twilio validado a nivel de servicio.
+- FAQ/RAG cubierto por pruebas unitarias de carga y busqueda.
+
+Estado de pruebas backend:
+
+- Las pruebas no corren actualmente si `backend/.env` contiene `DEBUG=release`, porque `settings.DEBUG` es booleano y Pydantic no puede interpretar `release`.
+- Para ejecutar pruebas, usar un valor booleano valido como `DEBUG=false` o aislar la configuracion de test.
 
 ## Pendientes
 
 - Completar credenciales reales de Twilio y Groq en `backend/.env`.
 - Configurar URL publica con ngrok o dominio.
+- Corregir `DEBUG` en `backend/.env` para que sea booleano.
+- Implementar o retirar de la documentacion la preferencia por cliente para texto/audio.
+- Alinear el guardado de respuestas del asesor con el resultado real de Twilio.
+- Cargar automaticamente las tools (`financial_tools`, `customer_tools`, `policy_tools`) y corregir el ciclo de tool calling.
+- Deduplicar conversaciones por cliente en el dashboard si ese sigue siendo el comportamiento deseado.
 - Validar firma de webhook de Twilio.
 - Agregar autenticacion y roles al dashboard.
 - Agregar rate limiting y politicas de seguridad.
