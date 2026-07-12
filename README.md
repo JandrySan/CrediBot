@@ -37,6 +37,7 @@ Componentes principales:
 13. Cierre manual de conversaciones en estado `HANDOFF`.
 14. Carga, listado, eliminacion logica y recuperacion de FAQs desde dashboard.
 15. Timeout configurable, restauracion y limpieza de sesiones de conversacion.
+16. Administracion frontend de FAQs y navegacion interna con React Router.
 
 ## Flujo principal
 
@@ -118,6 +119,13 @@ Componentes:
 
 El flujo actual usa FAQs para preguntas sobre requisitos, documentos, tasas, politicas, condiciones y temas similares. En modo conversacional, el contexto FAQ se agrega al prompt de IA. En el flujo estructurado, si el usuario hace una pregunta de politica con una FAQ relevante, el bot responde esa FAQ y luego ofrece continuar con la precalificacion.
 
+Frontend:
+
+- Ruta `/faqs` con pantalla de administracion.
+- `frontend/src/services/faq.service.ts`: cliente HTTP para listar, cargar y eliminar FAQs.
+- `frontend/src/hooks/useFaqs.ts`: hooks React Query para listado, upload y eliminacion.
+- `frontend/src/pages/FaqAdminPage.tsx`: carga JSON/CSV, lista FAQs activas y elimina FAQs de forma logica.
+
 Formato JSON aceptado por upload:
 
 ```json
@@ -178,6 +186,9 @@ Funcionalidades:
 - Responder al cliente por WhatsApp.
 - Cerrar una conversacion en `HANDOFF`.
 - Ejecutar limpieza manual de conversaciones abiertas expiradas.
+- Administrar FAQs desde la ruta `/faqs`.
+
+La app usa `react-router-dom` para navegar entre el panel principal (`/`) y FAQs (`/faqs`).
 
 Estado actual: `GET /api/dashboard/conversations` lista conversaciones unidas con solicitudes de credito. Si un cliente tiene varias conversaciones o solicitudes, puede devolver mas de una fila para ese cliente. La deduplicacion por cliente queda pendiente.
 
@@ -387,6 +398,7 @@ TWILIO_WEBHOOK_URL=https://<ngrok>/webhook/whatsapp
 - Envio del asesor por Twilio validado a nivel de servicio.
 - FAQ/RAG cubierto por pruebas unitarias de carga y busqueda.
 - Sesiones de conversacion cubiertas por pruebas de restauracion, expiracion y limpieza.
+- Frontend de FAQs compila con `npm run build`.
 
 Estado de pruebas backend:
 

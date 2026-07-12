@@ -11,15 +11,21 @@ import DashboardIcon from "@mui/icons-material/Dashboard";
 import ChatIcon from "@mui/icons-material/Chat";
 import AssessmentIcon from "@mui/icons-material/Assessment";
 import SettingsIcon from "@mui/icons-material/Settings";
+import QuizIcon from "@mui/icons-material/Quiz";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const menuItems = [
-  { text: "Panel", icon: <DashboardIcon /> },
-  { text: "Conversaciones", icon: <ChatIcon /> },
-  { text: "Analítica", icon: <AssessmentIcon /> },
-  { text: "Configuración", icon: <SettingsIcon /> },
+  { text: "Panel", icon: <DashboardIcon />, path: "/" },
+  { text: "Conversaciones", icon: <ChatIcon />, path: "/" },
+  { text: "FAQs", icon: <QuizIcon />, path: "/faqs" },
+  { text: "Analitica", icon: <AssessmentIcon />, path: "/" },
+  { text: "Configuracion", icon: <SettingsIcon />, path: "/" },
 ];
 
 export function Sidebar() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   return (
     <Box
       sx={{
@@ -39,29 +45,39 @@ export function Sidebar() {
       </Typography>
 
       <List>
-        {menuItems.map((item, index) => (
-          <ListItemButton
-            key={item.text}
-            sx={{
-              borderRadius: 3,
-              mb: 1,
-              px: 2,
-              backgroundColor:
-                index === 0 ? "rgba(255,255,255,0.16)" : "transparent",
-              "&:hover": {
-                backgroundColor: "rgba(255,255,255,0.18)",
-              },
-            }}
-          >
-            <ListItemIcon sx={{ color: "white", minWidth: 38 }}>
-              {item.icon}
-            </ListItemIcon>
-            <ListItemText
-              primary={item.text}
-              slotProps={{ primary: { sx: { fontWeight: 700 } } }}
-            />
-          </ListItemButton>
-        ))}
+        {menuItems.map((item) => {
+          const selected = location.pathname === item.path;
+
+          return (
+            <ListItemButton
+              key={item.text}
+              selected={selected}
+              onClick={() => navigate(item.path)}
+              sx={{
+                borderRadius: 3,
+                mb: 1,
+                px: 2,
+                backgroundColor: selected
+                  ? "rgba(255,255,255,0.16)"
+                  : "transparent",
+                "&:hover": {
+                  backgroundColor: "rgba(255,255,255,0.18)",
+                },
+                "&.Mui-selected": {
+                  backgroundColor: "rgba(255,255,255,0.16)",
+                },
+              }}
+            >
+              <ListItemIcon sx={{ color: "white", minWidth: 38 }}>
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText
+                primary={item.text}
+                slotProps={{ primary: { sx: { fontWeight: 700 } } }}
+              />
+            </ListItemButton>
+          );
+        })}
       </List>
     </Box>
   );

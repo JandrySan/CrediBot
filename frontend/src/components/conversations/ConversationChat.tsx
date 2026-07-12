@@ -108,6 +108,20 @@ export function ConversationChat({ conversation }: Props) {
                 {message.type === "AUDIO" && (
                   <Chip size="small" label="Audio" sx={{ mt: 1 }} />
                 )}
+
+                {message.tool_calls && message.tool_calls.length > 0 && (
+                  <Box sx={{ mt: 1, display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {message.tool_calls.map((toolCall, index) => (
+                      <Chip
+                        key={`${toolCall.tool_name}-${index}`}
+                        size="small"
+                        label={`Tool: ${toolCall.tool_name}`}
+                        color={toolCall.success === false ? "warning" : "info"}
+                        variant="outlined"
+                      />
+                    ))}
+                  </Box>
+                )}
               </Box>
             </Box>
           );

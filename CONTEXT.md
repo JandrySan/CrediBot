@@ -42,6 +42,7 @@ CrediBot/
 |   |-- src/components/      layout y componentes de conversaciones
 |   |-- src/hooks/           hooks de datos y WebSocket
 |   |-- src/services/        clientes HTTP
+|   |-- src/pages/           dashboard y administracion de FAQs
 |   `-- src/types/           tipos TypeScript
 |-- README.md
 `-- CONTEXT.md
@@ -226,6 +227,14 @@ Endpoints de dashboard:
 - `GET /api/dashboard/faq`: lista FAQs activas.
 - `DELETE /api/dashboard/faq/{id}`: eliminacion logica, marca `is_active=false`.
 
+Frontend:
+
+- Ruta `/faqs` en `frontend/src/App.tsx`.
+- `frontend/src/pages/FaqAdminPage.tsx`: pantalla para cargar JSON/CSV, listar FAQs activas y eliminar FAQs.
+- `frontend/src/services/faq.service.ts`: cliente HTTP para endpoints FAQ.
+- `frontend/src/hooks/useFaqs.ts`: hooks React Query para listado, carga y eliminacion.
+- `frontend/src/types/faq.ts`: tipos `FaqItem` y `FaqUploadResult`.
+
 Integracion conversacional:
 
 - En `AIOrchestrator.generate_whatsapp_reply()`, si hay una sesion DB disponible, `RetrievalService` construye contexto FAQ y lo agrega al prompt del modelo.
@@ -337,6 +346,14 @@ Comportamiento:
 - Permite responder al cliente por WhatsApp.
 - Permite cerrar conversacion en HANDOFF con resolucion (APPROVED/DENIED/RESOLVED).
 - Permite disparar limpieza manual de conversaciones abiertas expiradas.
+
+Frontend:
+
+- `App.tsx` usa `react-router-dom` con rutas `/` y `/faqs`.
+- `Sidebar.tsx` navega entre Panel y FAQs.
+- `ConversationChat.tsx` soporta un campo opcional `tool_calls` por mensaje y renderiza chips con el nombre de la tool si el backend los devuelve.
+
+Nota: la visualizacion de `tool_calls` ya esta preparada en frontend, pero el backend todavia no persiste tool calls por mensaje.
 
 ## Sesiones de conversacion
 
@@ -499,6 +516,7 @@ TWILIO_WEBHOOK_URL=https://.../webhook/whatsapp
 - Maquina de estados con transiciones validadas.
 - FAQ/RAG esta cubierto por pruebas unitarias de carga y busqueda.
 - Sesiones de conversacion estan cubiertas por pruebas de restauracion, expiracion y limpieza.
+- Frontend de administracion de FAQs compila con `npm run build`.
 
 Estado actual de pruebas backend:
 
@@ -518,15 +536,6 @@ Estado actual de pruebas backend:
 - Autenticacion y autorizacion del dashboard.
 - Rate limiting y endurecimiento de seguridad.
 - Despliegue productivo y observabilidad.
-
-## Proximas fases (disponibles para colaboradores)
-
-### Fase 5: Frontend (Dashboard)
-
-- Pagina de administracion de FAQs en React.
-- `frontend/src/services/faq.service.ts` — cliente HTTP para CRUD de FAQs.
-- `frontend/src/hooks/useFaqs.ts` — hook React Query para FAQs.
-- Mostrar uso de tools en la vista de conversacion (tool calls ejecutados por el bot).
 
 ## Notas para nuevos colaboradores
 
