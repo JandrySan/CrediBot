@@ -103,6 +103,20 @@ class ConversationOrchestrator:
             self._handoff(conversation)
             return ""
 
+        if ai_data.get("intent") == "consulta":
+            history = self._build_ai_history(conversation.id)
+            if history and history[-1].get("role") == "user":
+                history = history[:-1]
+
+            response = self.ai.generate_whatsapp_reply(
+                text=text,
+                history=history,
+                db=self.db,
+            )
+            if response:
+                self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
+                return response
+
         faq_response = self._answer_faq_if_applicable(text)
         if faq_response:
             self._save_message(conversation.id, "OUTBOUND", faq_response, "TEXT")

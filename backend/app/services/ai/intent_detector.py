@@ -1,6 +1,15 @@
 from app.services.ai.ai_gateway import AIGateway
 
 
+CONSULTA_KEYWORDS = [
+    "regla", "reglas", "politica", "política", "requisito", "requisitos",
+    "tasa", "interes", "interés", "intereses", "condicion", "condición",
+    "documento", "documentos", "plazo", "maximo", "máximo", "anticipado",
+    "como funciona", "que necesito", "me puedes decir", "podrias",
+    "que es", "cual es", "cuales son", "pregunta", "consulta",
+]
+
+
 class IntentDetector:
     def __init__(self):
         self.ai = AIGateway()
@@ -14,7 +23,15 @@ class IntentDetector:
         - saludo
         - credito
         - asesor
+        - consulta
         - desconocido
+
+        Reglas:
+        - "saludo": el usuario solo saluda sin pedir nada
+        - "credito": el usuario da datos o expresa interes en un credito
+        - "asesor": el usuario pide hablar con un humano
+        - "consulta": el usuario pregunta sobre reglas, politicas, requisitos, tasas, plazos, documentos o condiciones
+        - "desconocido": cualquier otra cosa
         """
 
         user_prompt = f"""
@@ -23,7 +40,7 @@ class IntentDetector:
 
         Devuelve:
         {{
-            "intent": "saludo | credito | asesor | desconocido"
+            "intent": "saludo | credito | asesor | consulta | desconocido"
         }}
         """
 
@@ -40,6 +57,9 @@ class IntentDetector:
 
         if any(word in normalized for word in ["asesor", "humano", "persona", "agente", "ejecutivo"]):
             return "asesor"
+
+        if any(kw in normalized for kw in CONSULTA_KEYWORDS):
+            return "consulta"
 
         if any(word in normalized for word in ["credito", "crédito", "prestamo", "préstamo", "dinero"]):
             return "credito"

@@ -55,7 +55,10 @@ class AIOrchestrator:
             "- consultar_politica: cuando pregunte sobre requisitos, documentos, "
             "plazos, tasas de interes, o terminos y condiciones.\n\n"
             "Usa estas herramientas cuando el usuario haga preguntas especificas. "
-            "No las uses si no es necesario."
+            "No las uses si no es necesario.\n\n"
+            "Cuando respondas una consulta del usuario, al final invitalo a seguir "
+            "con la precalificacion de credito si aun no la ha completado. "
+            "Menciona que puede escribir 'quiero mi credito' o 'empecemos' para iniciar."
         )
 
         if faq_context:
