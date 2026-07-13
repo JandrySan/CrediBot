@@ -15,6 +15,7 @@ from app.models import (
 def init_db():
     Base.metadata.create_all(bind=engine)
     _ensure_customer_national_id()
+    _ensure_credit_application_reason_text()
     _ensure_conversation_response_mode()
 
 
@@ -30,6 +31,29 @@ def _ensure_customer_national_id():
 
         connection.execute(
             text("CREATE INDEX IF NOT EXISTS idx_customers_national_id ON customers(national_id)")
+        )
+
+
+def _ensure_credit_application_reason_text():
+    if engine.dialect.name == "sqlite":
+        return
+
+    inspector = inspect(engine)
+    columns = {
+        column["name"]: column
+        for column in inspector.get_columns("credit_applications")
+    }
+    reason_column = columns.get("reason")
+
+    if not reason_column:
+        return
+
+    if "TEXT" in str(reason_column.get("type", "")).upper():
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE credit_applications ALTER COLUMN reason TYPE TEXT")
         )
 
 
