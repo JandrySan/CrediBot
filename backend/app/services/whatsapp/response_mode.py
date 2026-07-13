@@ -54,6 +54,28 @@ class ResponseModePreference:
         "quiero texto",
         "por escrito",
     }
+    BUSINESS_CONTENT_KEYWORDS = {
+        "asesor",
+        "credito",
+        "creditos",
+        "prestamo",
+        "prestamos",
+        "solicitar",
+        "solicito",
+        "monto",
+        "dolares",
+        "plazo",
+        "mes",
+        "meses",
+        "ingreso",
+        "ingresos",
+        "requisito",
+        "requisitos",
+        "tasa",
+        "interes",
+        "documento",
+        "documentos",
+    }
 
     @classmethod
     def detect(cls, text: str) -> str | None:
@@ -76,12 +98,31 @@ class ResponseModePreference:
             return False
 
         if response_mode == cls.AUDIO:
-            return normalized in cls.AUDIO_COMMANDS
+            return normalized in cls.AUDIO_COMMANDS or cls._is_preference_only_request(
+                normalized,
+                cls.AUDIO_PATTERNS,
+            )
 
         if response_mode == cls.TEXT:
-            return normalized in cls.TEXT_COMMANDS
+            return normalized in cls.TEXT_COMMANDS or cls._is_preference_only_request(
+                normalized,
+                cls.TEXT_PATTERNS,
+            )
 
         return False
+
+    @classmethod
+    def _is_preference_only_request(cls, normalized: str, patterns: tuple[str, ...]) -> bool:
+        if not any(re.search(pattern, normalized) for pattern in patterns):
+            return False
+
+        if re.search(r"\d", normalized):
+            return False
+
+        return not any(
+            keyword in normalized
+            for keyword in cls.BUSINESS_CONTENT_KEYWORDS
+        )
 
     @staticmethod
     def normalize(text: str) -> str:

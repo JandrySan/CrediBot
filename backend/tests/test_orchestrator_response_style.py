@@ -74,3 +74,20 @@ def test_question_for_amount_mentions_pleasure_and_name():
 
     assert "Es un gusto hablar contigo, Carlos" in text
     assert "monto" in text.lower()
+
+
+def test_plain_greeting_gets_welcome_without_requesting_name():
+    orchestrator = _build_orchestrator_for_unit_tests()
+
+    text = orchestrator._build_welcome_response()
+
+    assert "en que te puedo ayudar" in text.lower()
+    assert "nombre completo" not in text.lower()
+
+
+def test_plain_greeting_detection_accepts_accented_text():
+    orchestrator = _build_orchestrator_for_unit_tests()
+
+    assert orchestrator._is_plain_greeting("Hola, buen dia")
+    assert orchestrator._is_plain_greeting("Hola, buen día")
+    assert not orchestrator._is_plain_greeting("Hola, quiero un credito")

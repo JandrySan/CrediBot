@@ -6,6 +6,32 @@ from main import app
 
 
 class TestWhatsAppAudioWebhook:
+    def test_plain_hola_returns_open_welcome_instead_of_asking_name(self):
+        with patch(
+            "app.services.conversation.orchestrator.AIOrchestrator.analyze_message",
+            return_value={"intent": "saludo"},
+        ), patch(
+            "app.services.conversation.orchestrator.AIOrchestrator.get_model_name",
+            return_value="test",
+        ), patch(
+            "app.api.whatsapp.TextToSpeechService.generate_voice_note",
+            return_value={"success": False, "message": "tts desactivado en test"},
+        ):
+            with TestClient(app) as client:
+                response = client.post(
+                    "/webhook/whatsapp",
+                    data={
+                        "From": "whatsapp:+593000000010",
+                        "Body": "hola",
+                        "ProfileName": "Test",
+                        "MessageType": "text",
+                    },
+                )
+
+        assert response.status_code == 200
+        assert "En que te puedo ayudar" in response.text
+        assert "nombre completo" not in response.text.lower()
+
     def test_audio_message_uses_transcription_and_audio_handler(self):
         with patch(
             "app.api.whatsapp.SpeechToTextService.transcribe_twilio_media",
@@ -111,6 +137,58 @@ class TestWhatsAppAudioWebhook:
 
         assert response.status_code == 200
         assert "<Media>https://example.com/webhook/audio/sample.ogg</Media>" in response.text
+
+    def test_long_audio_preference_request_is_treated_as_mode_command(self):
+        with patch(
+            "app.services.whatsapp.whatsapp_service.WhatsAppService.process_inbound_message",
+            return_value="no debe procesar credito",
+        ) as processor, patch(
+            "app.api.whatsapp.TextToSpeechService.generate_voice_note",
+            return_value={
+                "success": True,
+                "media_url": "https://example.com/webhook/audio/preference.ogg",
+            },
+        ):
+            with TestClient(app) as client:
+                response = client.post(
+                    "/webhook/whatsapp",
+                    data={
+                        "From": "whatsapp:+593000000008",
+                        "Body": "quiero que me respondas en audio",
+                        "ProfileName": "Test",
+                        "MessageType": "text",
+                    },
+                )
+
+        assert response.status_code == 200
+        assert "<Media>https://example.com/webhook/audio/preference.ogg</Media>" in response.text
+        assert not processor.called
+
+    def test_audio_mode_request_with_credit_content_still_processes_message(self):
+        with patch(
+            "app.services.whatsapp.whatsapp_service.WhatsAppService.process_inbound_message",
+            return_value="procesando credito",
+        ) as processor, patch(
+            "app.api.whatsapp.TextToSpeechService.generate_voice_note",
+            return_value={
+                "success": True,
+                "media_url": "https://example.com/webhook/audio/credit.ogg",
+            },
+        ):
+            with TestClient(app) as client:
+                response = client.post(
+                    "/webhook/whatsapp",
+                    data={
+                        "From": "whatsapp:+593000000009",
+                        "Body": "responde en audio, quiero un credito de 2000",
+                        "ProfileName": "Test",
+                        "MessageType": "text",
+                    },
+                )
+
+        assert response.status_code == 200
+        assert "<Media>https://example.com/webhook/audio/credit.ogg</Media>" in response.text
+        assert processor.called
 
     def test_user_can_return_to_text_replies_after_audio_mode(self):
         with patch(

@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 import re
+import unicodedata
 
 from sqlalchemy.orm import Session
 
@@ -102,6 +103,11 @@ class ConversationOrchestrator:
         if self._is_handoff_requested(text, ai_data):
             self._handoff(conversation)
             return ""
+
+        if self._should_send_welcome(conversation, customer, application, text, ai_data):
+            response = self._build_welcome_response()
+            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
+            return response
 
         if ai_data.get("intent") == "consulta":
             history = self._build_ai_history(conversation.id)
@@ -257,6 +263,63 @@ class ConversationOrchestrator:
         return any(
             word in normalized
             for word in ["asesor", "humano", "persona", "agente", "ejecutivo"]
+        )
+
+    def _should_send_welcome(self, conversation, customer, application, text: str, ai_data: dict) -> bool:
+        if conversation.current_state != ConversationState.START.value:
+            return False
+
+        if ai_data.get("intent") != "saludo":
+            return False
+
+        if not self._is_plain_greeting(text):
+            return False
+
+        has_profile_data = any([
+            bool(customer.full_name),
+            application.amount is not None,
+            application.term_months is not None,
+            application.monthly_income is not None,
+        ])
+
+        return not has_profile_data
+
+    def _is_plain_greeting(self, text: str) -> bool:
+        normalized = (text or "").lower().strip()
+        normalized = "".join(
+            char
+            for char in unicodedata.normalize("NFD", normalized)
+            if unicodedata.category(char) != "Mn"
+        )
+        normalized = re.sub(r"[^a-z\s]", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+
+        greetings = {
+            "hola",
+            "buenas",
+            "buen dia",
+            "buenos dias",
+            "buenas tardes",
+            "buenas noches",
+            "saludos",
+            "hey",
+        }
+        polite_suffixes = {
+            "hola buen dia",
+            "hola buenos dias",
+            "hola buenas",
+            "hola buenas tardes",
+            "hola buenas noches",
+            "hola que tal",
+        }
+
+        return normalized in greetings or normalized in polite_suffixes
+
+    def _build_welcome_response(self) -> str:
+        return (
+            "Hola, soy CrediBot. Te puedo ayudar con una precalificacion de credito, "
+            "resolver dudas sobre requisitos o derivarte con un asesor. "
+            "En que te puedo ayudar?"
         )
 
     def _answer_faq_if_applicable(self, text: str) -> str:

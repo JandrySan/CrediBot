@@ -75,6 +75,12 @@ El webhook ahora usa `WhatsAppService` para procesar los mensajes:
 9. Si `response_mode=AUDIO`, `AUDIO_REPLY_ENABLED=true` y `TextToSpeechService.generate_voice_note()` tiene exito, se responde con media; si no, con texto plano.
 10. Se emite evento WebSocket `NEW_MESSAGE` o `AUDIO_TRANSCRIPTION_FAILED`, incluyendo `bot_response_mode`.
 
+Saludo inicial:
+
+- Si el usuario solo escribe un saludo como `hola`, `buenas` o `hola, buen dia`, el bot responde con una bienvenida abierta: puede ayudar con precalificacion, requisitos o asesor.
+- En ese caso no avanza inmediatamente a pedir nombre completo.
+- Cuando el usuario expresa interes en credito o entrega datos, el flujo estructurado continua y pregunta el siguiente dato requerido.
+
 ## Estados de conversacion
 
 Definidos en `backend/app/state_machine/states.py`:
@@ -310,6 +316,8 @@ Comportamiento:
 - El valor por defecto es `TEXT`.
 - El usuario puede pedir audio o texto desde WhatsApp sin que el asesor intervenga.
 - Si el usuario solo envia un comando de cambio de modo, el bot confirma el cambio y no procesa ese texto como dato de credito.
+- Frases largas de preferencia como `quiero que me respondas en audio` tambien se tratan como comando de modo si no traen datos de credito.
+- Si la frase combina preferencia y contenido de negocio, por ejemplo `responde en audio, quiero un credito de 2000`, cambia el modo y procesa el mensaje.
 - Si el usuario pide audio pero `AUDIO_REPLY_ENABLED=false` o falla la generacion TTS, el bot responde en texto.
 - Si el usuario envia una nota de voz, el audio se transcribe y la respuesta sigue respetando `response_mode`; recibir audio no fuerza al bot a contestar con audio.
 
@@ -552,7 +560,7 @@ TWILIO_WEBHOOK_URL=https://.../webhook/whatsapp
 - `init_db()` asegura `conversations.response_mode` en bases ya creadas.
 - Endpoint de conversaciones responde `200`.
 - Frontend compila con `npm run build`.
-- Pruebas backend pasan: `34 passed`.
+- Pruebas backend pasan: `45 passed`.
 - Flujo de audio esta cubierto por pruebas.
 - Preferencia texto/audio por conversacion esta cubierta por pruebas.
 - Dashboard filtra conversaciones cerradas vacias y abandonadas.
