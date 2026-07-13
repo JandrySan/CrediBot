@@ -1,0 +1,100 @@
+name: Despliegue frontend AWS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "frontend/**"
+      - ".github/workflows/cd-frontend-aws.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
+  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+  AWS_S3_FRONTEND_BUCKET: ${{ vars.AWS_S3_FRONTEND_BUCKET || secrets.AWS_S3_FRONTEND_BUCKET }}
+  AWS_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.AWS_CLOUDFRONT_DISTRIBUTION_ID || secrets.AWS_CLOUDFRONT_DISTRIBUTION_ID }}
+  FRONTEND_PUBLIC_URL: ${{ vars.FRONTEND_PUBLIC_URL || secrets.FRONTEND_PUBLIC_URL }}
+
+jobs:
+  publicar-frontend:
+    name: Publicar frontend en S3 y CloudFront
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Validar configuracion requerida
+        working-directory: .
+        run: |
+          missing=0
+          for name in AWS_REGION AWS_ROLE_ARN AWS_S3_FRONTEND_BUCKET AWS_CLOUDFRONT_DISTRIBUTION_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name no esta configurada en GitHub Actions."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Validar lint
+        run: npm run lint
+
+      - name: Compilar frontend
+        run: npm run build
+
+      - name: Configurar credenciales AWS por OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Subir archivos estaticos a S3
+        run: |
+          aws s3 sync dist "s3://${AWS_S3_FRONTEND_BUCKET}" \
+            --delete \
+            --exclude "assets/*" \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+          aws s3 sync dist/assets "s3://${AWS_S3_FRONTEND_BUCKET}/assets" \
+            --delete \
+            --cache-control "public,max-age=31536000,immutable"
+
+      - name: Invalidar CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$AWS_CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths "/*" >/dev/null
+
+      - name: Resumen del despliegue
+        working-directory: .
+        run: |
+          {
+            echo "## Despliegue frontend"
+            echo ""
+            echo "- Bucket S3: \`${AWS_S3_FRONTEND_BUCKET}\`"
+            echo "- Distribucion CloudFront: \`${AWS_CLOUDFRONT_DISTRIBUTION_ID}\`"
+            if [ -n "$FRONTEND_PUBLIC_URL" ]; then
+              echo "- URL: ${FRONTEND_PUBLIC_URL}"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

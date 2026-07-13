@@ -201,6 +201,27 @@ VITE_WS_BASE_URL=wss://api.midominio.com
 
 Si `VITE_WS_BASE_URL` no se configura, el frontend lo deriva desde `VITE_API_BASE_URL`.
 
+## Despliegue del frontend en S3 + CloudFront
+
+El frontend puede publicarse como sitio estatico privado en S3 y servirse por CloudFront.
+La distribucion actual enruta:
+
+- `/` y assets estaticos al bucket S3 del frontend.
+- `/api/*` al ALB del backend.
+- `/ws/*` al ALB del backend para WebSocket del dashboard.
+
+Variables requeridas en GitHub Actions:
+
+```text
+AWS_S3_FRONTEND_BUCKET=credibot-frontend-514090178790-us-east-1
+AWS_CLOUDFRONT_DISTRIBUTION_ID=E3IWLBA195SDM2
+FRONTEND_PUBLIC_URL=https://d30z3dsmpm7ctx.cloudfront.net
+```
+
+El build de produccion usa el mismo origen del navegador como base de API cuando
+`VITE_API_BASE_URL` no esta definido. Esto evita contenido mixto porque el frontend
+y las llamadas `/api/*` salen por HTTPS desde CloudFront.
+
 ## Como se despliega
 
 1. Hacer merge a `main`.

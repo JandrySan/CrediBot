@@ -1,7 +1,17 @@
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
+function getDefaultApiBaseUrl(): string {
+  if (import.meta.env.DEV) {
+    return "http://127.0.0.1:8000";
+  }
+
+  if (typeof window !== "undefined" && window.location.origin) {
+    return window.location.origin;
+  }
+
+  return "http://127.0.0.1:8000";
+}
 
 function normalizeHttpBaseUrl(value: string | undefined): string {
-  return (value || DEFAULT_API_BASE_URL).replace(/\/+$/, "");
+  return (value || getDefaultApiBaseUrl()).replace(/\/+$/, "");
 }
 
 function buildWebSocketBaseUrl(apiBaseUrl: string): string {
