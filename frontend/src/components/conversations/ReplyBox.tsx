@@ -1,4 +1,5 @@
 import { useState } from "react";
+import axios from "axios";
 import { Alert, Box, Button, TextField } from "@mui/material";
 
 import type { Conversation } from "../../types/conversation";
@@ -40,9 +41,14 @@ export function ReplyBox({ conversation }: Props) {
             );
           }
         },
-        onError: () => {
+        onError: (error) => {
+          const backendMessage = axios.isAxiosError(error)
+            ? error.response?.data?.message
+            : "";
+
           setSendError(
-            "No se pudo enviar la respuesta. Revisa la conexion con el backend."
+            backendMessage ||
+              "No se pudo enviar la respuesta. Revisa la conexion con el backend."
           );
         },
       }
