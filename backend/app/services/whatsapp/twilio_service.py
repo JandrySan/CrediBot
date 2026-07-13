@@ -1,5 +1,6 @@
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
+import time
 
 from app.config.settings import settings
 
@@ -67,10 +68,16 @@ class TwilioWhatsAppService:
                 to=to_number,
                 body=body
             )
+            status_result = self._wait_for_send_status(message.sid, message)
+            if not status_result["success"]:
+                return status_result
 
             return {
                 "success": True,
-                "sid": message.sid
+                "sid": message.sid,
+                "status": status_result.get("status"),
+                "from": from_number,
+                "to": to_number,
             }
         except TwilioRestException as exc:
             error_code = getattr(exc, "code", None)
@@ -95,6 +102,51 @@ class TwilioWhatsAppService:
                 "success": False,
                 "message": str(exc)
             }
+
+    def _wait_for_send_status(self, message_sid: str, initial_message):
+        status = (getattr(initial_message, "status", "") or "").lower()
+        error_code = getattr(initial_message, "error_code", None)
+        error_message = getattr(initial_message, "error_message", None)
+
+        if not status:
+            return {"success": True, "sid": message_sid, "status": None}
+
+        success_statuses = {"sent", "delivered", "read"}
+        failure_statuses = {"failed", "undelivered"}
+        pending_statuses = {"accepted", "scheduled", "queued", "sending"}
+
+        for _ in range(5):
+            if status in success_statuses:
+                return {"success": True, "sid": message_sid, "status": status}
+
+            if status in failure_statuses:
+                return {
+                    "success": False,
+                    "sid": message_sid,
+                    "status": status,
+                    "error_code": error_code,
+                    "message": error_message or "Twilio no pudo entregar el mensaje de WhatsApp.",
+                }
+
+            if status not in pending_statuses:
+                return {"success": True, "sid": message_sid, "status": status}
+
+            time.sleep(1)
+            fetched = self.client.messages(message_sid).fetch()
+            status = (getattr(fetched, "status", "") or "").lower()
+            error_code = getattr(fetched, "error_code", None)
+            error_message = getattr(fetched, "error_message", None)
+
+        return {
+            "success": False,
+            "sid": message_sid,
+            "status": status,
+            "error_code": error_code,
+            "message": (
+                "Twilio acepto el mensaje, pero no confirmo el envio a WhatsApp. "
+                "Revisa que el cliente siga unido al Sandbox y los logs de Twilio."
+            ),
+        }
 
     def _get_from_number(self) -> str:
         return (

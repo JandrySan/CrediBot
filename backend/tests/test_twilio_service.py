@@ -55,6 +55,40 @@ class TwilioServiceTests(unittest.TestCase):
                 "whatsapp:+3001234567",
             )
 
+    def test_send_message_reports_twilio_delivery_failure_after_create(self):
+        fake_settings = SimpleNamespace(
+            TWILIO_ENABLED=True,
+            TWILIO_ACCOUNT_SID=FAKE_ACCOUNT_SID,
+            TWILIO_AUTH_TOKEN=FAKE_AUTH_TOKEN,
+            TWILIO_WHATSAPP_NUMBER="+14155238886",
+            TWILIO_WEBHOOK_URL="",
+        )
+
+        with patch.object(twilio_service, "settings", fake_settings), patch.object(
+            twilio_service.time,
+            "sleep",
+        ):
+            service = twilio_service.TwilioWhatsAppService()
+            service.client = unittest.mock.Mock()
+            created = unittest.mock.Mock()
+            created.sid = "SM123"
+            created.status = "queued"
+            created.error_code = None
+            created.error_message = None
+            failed = unittest.mock.Mock()
+            failed.status = "undelivered"
+            failed.error_code = 63016
+            failed.error_message = "User not joined to sandbox"
+            service.client.messages.create.return_value = created
+            service.client.messages.return_value.fetch.return_value = failed
+
+            result = service.send_message(to="3001234567", body="Hola")
+
+            self.assertFalse(result["success"])
+            self.assertEqual(result["sid"], "SM123")
+            self.assertEqual(result["status"], "undelivered")
+            self.assertEqual(result["error_code"], 63016)
+
     def test_normalize_phone_number_accepts_existing_whatsapp_prefix_case_insensitive(self):
         normalized = twilio_service.TwilioWhatsAppService._normalize_phone_number(
             " WhatsApp:+593999999999 "
