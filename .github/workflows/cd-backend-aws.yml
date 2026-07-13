@@ -20,6 +20,7 @@ env:
   AWS_ECS_CLUSTER: ${{ vars.AWS_ECS_CLUSTER || secrets.AWS_ECS_CLUSTER }}
   AWS_ECS_SERVICE: ${{ vars.AWS_ECS_SERVICE || secrets.AWS_ECS_SERVICE }}
   AWS_ECS_CONTAINER_NAME: ${{ vars.AWS_ECS_CONTAINER_NAME || secrets.AWS_ECS_CONTAINER_NAME }}
+  AUDIO_REPLY_PUBLIC_BASE_URL: ${{ vars.AUDIO_REPLY_PUBLIC_BASE_URL || secrets.AUDIO_REPLY_PUBLIC_BASE_URL || vars.FRONTEND_PUBLIC_URL || secrets.FRONTEND_PUBLIC_URL }}
 
 jobs:
   validar-backend:
@@ -155,6 +156,14 @@ jobs:
           fi
 
           jq --arg IMAGE "$IMAGE_URI" --arg NAME "$CONTAINER_NAME" '
+            def upsert_env($key; $value):
+              (.environment //= [])
+              | if ([.environment[]?.name] | index($key)) then
+                  (.environment[] | select(.name == $key) | .value) = $value
+                else
+                  .environment += [{"name": $key, "value": $value}]
+                end;
+
             del(
               .taskDefinitionArn,
               .revision,
@@ -165,7 +174,28 @@ jobs:
               .registeredBy
             )
             | (.containerDefinitions[] | select(.name == $NAME) | .image) = $IMAGE
+            | (.containerDefinitions[] | select(.name == $NAME)) |= (
+                upsert_env("AUDIO_REPLY_ENABLED"; "true")
+                | upsert_env("AUDIO_REPLY_LANGUAGE"; "es")
+              )
           ' task-definition.json > nueva-task-definition.json
+
+          if [ -n "$AUDIO_REPLY_PUBLIC_BASE_URL" ]; then
+            jq --arg NAME "$CONTAINER_NAME" --arg PUBLIC_BASE_URL "$AUDIO_REPLY_PUBLIC_BASE_URL" '
+              def upsert_env($key; $value):
+                (.environment //= [])
+                | if ([.environment[]?.name] | index($key)) then
+                    (.environment[] | select(.name == $key) | .value) = $value
+                  else
+                    .environment += [{"name": $key, "value": $value}]
+                  end;
+
+              (.containerDefinitions[] | select(.name == $NAME)) |= (
+                upsert_env("AUDIO_REPLY_PUBLIC_BASE_URL"; $PUBLIC_BASE_URL)
+              )
+            ' nueva-task-definition.json > nueva-task-definition.audio.json
+            mv nueva-task-definition.audio.json nueva-task-definition.json
+          fi
 
       - name: Registrar task definition
         id: task
