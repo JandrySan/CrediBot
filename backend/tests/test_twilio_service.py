@@ -55,6 +55,13 @@ class TwilioServiceTests(unittest.TestCase):
                 "whatsapp:+3001234567",
             )
 
+    def test_normalize_phone_number_accepts_existing_whatsapp_prefix_case_insensitive(self):
+        normalized = twilio_service.TwilioWhatsAppService._normalize_phone_number(
+            " WhatsApp:+593999999999 "
+        )
+
+        self.assertEqual(normalized, "whatsapp:+593999999999")
+
 
 if __name__ == "__main__":
     unittest.main()

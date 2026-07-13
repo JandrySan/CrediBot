@@ -136,6 +136,7 @@ async def receive_whatsapp_message(
         or "ogg" in media_content_type
         or message_type == "audio"
     )
+    force_text_reply = False
 
     whatsapp_service = WhatsAppService(db)
 
@@ -185,6 +186,7 @@ async def receive_whatsapp_message(
 
         if is_preference_command:
             response_text = _preference_confirmation(preference_conversation.response_mode)
+            force_text_reply = True
             MessageRepository(db).save_message(
                 conversation_id=preference_conversation.id,
                 direction="INBOUND",
@@ -218,6 +220,7 @@ async def receive_whatsapp_message(
 
         if is_preference_command:
             response_text = _preference_confirmation(preference_conversation.response_mode)
+            force_text_reply = True
             MessageRepository(db).save_message(
                 conversation_id=preference_conversation.id,
                 direction="INBOUND",
@@ -239,7 +242,11 @@ async def receive_whatsapp_message(
             )
 
     clean_response_text = (response_text or "").strip()
-    response_mode = _resolve_response_mode(db, From)
+    response_mode = (
+        ResponseModePreference.TEXT
+        if force_text_reply
+        else _resolve_response_mode(db, From)
+    )
     twilio_response, tts_result, bot_response_type = _build_twilio_reply(
         response_text=clean_response_text,
         response_mode=response_mode,

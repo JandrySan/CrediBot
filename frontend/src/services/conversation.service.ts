@@ -32,12 +32,7 @@ export const ConversationService = {
 
     const response = await api.post(
       `/api/dashboard/conversations/${conversationId}/reply`,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      }
+      formData
     );
 
     return response.data;
@@ -54,12 +49,7 @@ export const ConversationService = {
 
     const response = await api.post(
       `/api/dashboard/conversations/${conversationId}/close`,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      }
+      formData
     );
 
     return response.data;

@@ -185,7 +185,8 @@ class TestWhatsAppAudioWebhook:
                 )
 
         assert response.status_code == 200
-        assert "<Media>https://example.com/webhook/audio/sample.ogg</Media>" in response.text
+        assert "respondere en audio" in response.text
+        assert "<Media>" not in response.text
 
     def test_long_audio_preference_request_is_treated_as_mode_command(self):
         with patch(
@@ -210,7 +211,8 @@ class TestWhatsAppAudioWebhook:
                 )
 
         assert response.status_code == 200
-        assert "<Media>https://example.com/webhook/audio/preference.ogg</Media>" in response.text
+        assert "respondere en audio" in response.text
+        assert "<Media>" not in response.text
         assert not processor.called
 
     def test_audio_mode_request_with_credit_content_still_processes_message(self):

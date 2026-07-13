@@ -109,9 +109,10 @@ class TwilioWhatsAppService:
         if not value:
             return ""
 
-        if value.startswith("whatsapp:"):
+        if value.lower().startswith("whatsapp:"):
             value = value.split(":", 1)[1]
 
+        value = value.strip()
         if value.startswith("+"):
             e164 = value
         elif value.startswith("00"):

@@ -265,18 +265,37 @@ def take_conversation(
             "message": "La conversación está cerrada. Espera una nueva conversación del cliente."
         }
 
+    customer = (
+        db.query(Customer)
+        .filter(Customer.id == conversation.customer_id)
+        .first()
+    )
+
     conversation.status = "HANDOFF"
     conversation.current_state = ConversationState.HANDOFF.value
+    conversation.response_mode = "TEXT"
 
     db.commit()
     db.refresh(conversation)
+
+    twilio_result = {"success": False, "message": "Cliente no encontrado"}
+    if customer:
+        twilio_result = TwilioWhatsAppService().send_message(
+            to=customer.phone_number,
+            body=(
+                "Un asesor humano tomo tu conversacion. "
+                "Desde ahora te respondera directamente por este chat."
+            ),
+        )
 
     return {
         "success": True,
         "message": "Conversación tomada por asesor",
         "conversation_id": conversation.id,
         "status": conversation.status,
-        "state": conversation.current_state
+        "state": conversation.current_state,
+        "customer_notified": bool(twilio_result.get("success", False)),
+        "twilio": twilio_result
     }
 
 
@@ -316,6 +335,23 @@ async def reply_conversation(
             "message": "Cliente no encontrado"
         }
 
+    twilio_service = TwilioWhatsAppService()
+    twilio_result = twilio_service.send_message(
+        to=customer.phone_number,
+        body=message
+    )
+
+    whatsapp_sent = twilio_result.get("success", False)
+    if not whatsapp_sent:
+        return {
+            "success": False,
+            "message": twilio_result.get("message", "No se pudo enviar el mensaje por WhatsApp"),
+            "conversation_id": conversation.id,
+            "message_saved": False,
+            "whatsapp_sent": False,
+            "twilio": twilio_result
+        }
+
     outbound_message = Message(
         conversation_id=conversation.id,
         direction="OUTBOUND",
@@ -327,30 +363,18 @@ async def reply_conversation(
     db.commit()
     db.refresh(outbound_message)
 
-    twilio_service = TwilioWhatsAppService()
-    twilio_result = twilio_service.send_message(
-        to=customer.phone_number,
-        body=message
-    )
-
     await manager.broadcast({
         "type": "AGENT_REPLY",
         "conversation_id": conversation.id,
         "message": message
     })
 
-    whatsapp_sent = twilio_result.get("success", False)
-
     return {
-        "success": whatsapp_sent,
-        "message": (
-            "Respuesta enviada por asesor"
-            if whatsapp_sent
-            else twilio_result.get("message", "No se pudo enviar el mensaje por WhatsApp")
-        ),
+        "success": True,
+        "message": "Respuesta enviada por asesor",
         "conversation_id": conversation.id,
         "message_saved": True,
-        "whatsapp_sent": whatsapp_sent,
+        "whatsapp_sent": True,
         "twilio": twilio_result
     }
 
