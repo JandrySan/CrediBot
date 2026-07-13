@@ -33,6 +33,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Supabase local metadata
+
+supabase/.temp/
+
 # OS
 
 .DS_Store
