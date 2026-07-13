@@ -93,6 +93,23 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Sincronizar secrets Twilio en AWS
+        env:
+          TWILIO_ACCOUNT_SID_SECRET: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN_SECRET: ${{ secrets.TWILIO_AUTH_TOKEN }}
+        run: |
+          if [ -n "$TWILIO_ACCOUNT_SID_SECRET" ]; then
+            aws secretsmanager put-secret-value \
+              --secret-id credibot/twilio-account-sid \
+              --secret-string "$TWILIO_ACCOUNT_SID_SECRET" >/dev/null
+          fi
+
+          if [ -n "$TWILIO_AUTH_TOKEN_SECRET" ]; then
+            aws secretsmanager put-secret-value \
+              --secret-id credibot/twilio-auth-token \
+              --secret-string "$TWILIO_AUTH_TOKEN_SECRET" >/dev/null
+          fi
+
       - name: Validar o crear repositorio ECR
         run: |
           aws ecr describe-repositories --repository-names "$AWS_ECR_REPOSITORY" >/dev/null 2>&1 \
