@@ -1,6 +1,33 @@
 import { AppBar, Avatar, Box, Chip, Toolbar, Typography } from "@mui/material";
+import { useLocation } from "react-router-dom";
+
+const pageTitles: Record<string, { title: string; subtitle: string }> = {
+  "/panel": {
+    title: "Panel operativo",
+    subtitle: "Resumen de conversaciones, creditos e IA",
+  },
+  "/conversaciones": {
+    title: "Panel de asesor",
+    subtitle: "Gestion de conversaciones, creditos e IA",
+  },
+  "/faqs": {
+    title: "Administracion de FAQs",
+    subtitle: "Politicas, requisitos y respuestas frecuentes",
+  },
+  "/analitica": {
+    title: "Analitica",
+    subtitle: "Indicadores de atencion y precalificacion",
+  },
+  "/configuracion": {
+    title: "Configuracion",
+    subtitle: "Estado de conexiones e integracion WhatsApp",
+  },
+};
 
 export function TopBar() {
+  const location = useLocation();
+  const page = pageTitles[location.pathname] ?? pageTitles["/conversaciones"];
+
   return (
     <AppBar
       position="static"
@@ -15,15 +42,15 @@ export function TopBar() {
       <Toolbar sx={{ justifyContent: "space-between", minHeight: 72 }}>
         <Box>
           <Typography variant="h6" sx={{ fontWeight: 800 }}>
-            Panel de Asesor
+            {page.title}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Gestión de conversaciones, créditos e IA
+            {page.subtitle}
           </Typography>
         </Box>
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-          <Chip label="En línea" color="success" size="small" />
+          <Chip label="En linea" color="success" size="small" />
           <Avatar sx={{ bgcolor: "#0F766E", fontWeight: 800 }}>A</Avatar>
         </Box>
       </Toolbar>

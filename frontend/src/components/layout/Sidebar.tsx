@@ -15,11 +15,11 @@ import QuizIcon from "@mui/icons-material/Quiz";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const menuItems = [
-  { text: "Panel", icon: <DashboardIcon />, path: "/" },
-  { text: "Conversaciones", icon: <ChatIcon />, path: "/" },
+  { text: "Panel", icon: <DashboardIcon />, path: "/panel" },
+  { text: "Conversaciones", icon: <ChatIcon />, path: "/conversaciones" },
   { text: "FAQs", icon: <QuizIcon />, path: "/faqs" },
-  { text: "Analitica", icon: <AssessmentIcon />, path: "/" },
-  { text: "Configuracion", icon: <SettingsIcon />, path: "/" },
+  { text: "Analitica", icon: <AssessmentIcon />, path: "/analitica" },
+  { text: "Configuracion", icon: <SettingsIcon />, path: "/configuracion" },
 ];
 
 export function Sidebar() {

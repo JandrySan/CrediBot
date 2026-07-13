@@ -4,8 +4,11 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { theme } from "./theme/theme";
 import { MainLayout } from "./components/layout/MainLayout";
+import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { FaqAdminPage } from "./pages/FaqAdminPage";
+import { OverviewPage } from "./pages/OverviewPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 function App() {
   return (
@@ -14,9 +17,13 @@ function App() {
       <BrowserRouter>
         <MainLayout>
           <Routes>
-            <Route path="/" element={<DashboardPage />} />
+            <Route path="/" element={<Navigate to="/conversaciones" replace />} />
+            <Route path="/panel" element={<OverviewPage />} />
+            <Route path="/conversaciones" element={<DashboardPage />} />
             <Route path="/faqs" element={<FaqAdminPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="/analitica" element={<AnalyticsPage />} />
+            <Route path="/configuracion" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/conversaciones" replace />} />
           </Routes>
         </MainLayout>
       </BrowserRouter>
