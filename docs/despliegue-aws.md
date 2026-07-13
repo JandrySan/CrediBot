@@ -209,6 +209,7 @@ La distribucion actual enruta:
 - `/` y assets estaticos al bucket S3 del frontend.
 - `/api/*` al ALB del backend.
 - `/ws/*` al ALB del backend para WebSocket del dashboard.
+- `/webhook/*` al ALB del backend para WhatsApp/Twilio y audios publicos.
 
 Variables requeridas en GitHub Actions:
 
@@ -221,6 +222,24 @@ FRONTEND_PUBLIC_URL=https://d30z3dsmpm7ctx.cloudfront.net
 El build de produccion usa el mismo origen del navegador como base de API cuando
 `VITE_API_BASE_URL` no esta definido. Esto evita contenido mixto porque el frontend
 y las llamadas `/api/*` salen por HTTPS desde CloudFront.
+
+Webhook de Twilio sin dominio propio:
+
+```text
+https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp
+```
+
+Secretos de aplicacion requeridos en ECS/Secrets Manager para operacion completa:
+
+```text
+GROQ_API_KEY
+TWILIO_ACCOUNT_SID
+TWILIO_AUTH_TOKEN
+TWILIO_WHATSAPP_FROM
+TWILIO_WHATSAPP_NUMBER
+```
+
+`TWILIO_WEBHOOK_URL` y `AUDIO_REPLY_PUBLIC_BASE_URL` apuntan a CloudFront mientras no haya dominio propio.
 
 ## Como se despliega
 
