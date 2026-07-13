@@ -234,8 +234,11 @@ El dashboard permite:
 
 Rutas frontend:
 
-- `/`: panel principal.
+- `/panel`: resumen operativo.
+- `/conversaciones`: bandeja de conversaciones y atencion del asesor.
 - `/faqs`: administracion de FAQs.
+- `/analitica`: metricas operativas y de precalificacion.
+- `/configuracion`: estado de API, WebSocket y webhook.
 
 ## Endpoints
 
@@ -346,30 +349,159 @@ En produccion, si `VITE_API_BASE_URL` no se define, el frontend usa el mismo
 origen del navegador. Esto permite que `/api/*`, `/ws/*` y `/webhook/*` salgan
 por CloudFront.
 
-## Ejecucion local
+## Instalacion, ejecucion y uso
 
-Backend:
+### Requisitos previos
+
+- Python 3.12 o compatible.
+- Node.js 20 o compatible.
+- PostgreSQL local, Supabase o SQLite para pruebas rapidas.
+- Cuenta Twilio con WhatsApp Sandbox si se quiere probar WhatsApp.
+- Cuenta Groq si se usara IA, STT o respuestas conversacionales.
+- ngrok o dominio publico si Twilio debe llegar a un backend local.
+
+### Instalacion backend
+
+Desde la raiz del proyecto:
 
 ```powershell
 cd backend
+python -m venv .venv
+.\.venv\Scripts\activate
 python -m pip install -r requirements.txt
+```
+
+Crear o actualizar `backend/.env` usando `backend/.env.example` como base.
+
+Para desarrollo rapido con SQLite:
+
+```powershell
 $env:DATABASE_URL="sqlite:///./credibot_dev.db"
 $env:DEBUG="false"
+```
+
+Para usar Supabase/PostgreSQL:
+
+```env
+SUPABASE_DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:PORT/DB
+```
+
+Variables minimas recomendadas para probar el bot:
+
+```env
+GROQ_API_KEY=
+AI_ONLY_MODE=false
+TWILIO_ENABLED=true
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+TWILIO_WHATSAPP_NUMBER=+14155238886
+TWILIO_WEBHOOK_URL=https://TU_BACKEND_PUBLICO/webhook/whatsapp
+AUDIO_REPLY_ENABLED=true
+AUDIO_REPLY_PUBLIC_BASE_URL=https://TU_BACKEND_PUBLICO
+CONVERSATION_SESSION_TIMEOUT_MINUTES=60
+ABANDONED_CONVERSATION_RETENTION_DAYS=7
+```
+
+Ejecutar backend:
+
+```powershell
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Frontend:
+En desarrollo, tambien se puede usar recarga automatica:
+
+```powershell
+python -m uvicorn main:app --reload
+```
+
+### Instalacion frontend
 
 ```powershell
 cd frontend
 npm install
+```
+
+Crear `frontend/.env` si se quiere apuntar a un backend especifico:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_WS_BASE_URL=ws://127.0.0.1:8000
+```
+
+Ejecutar frontend:
+
+```powershell
 npm run dev
 ```
+
+Abrir:
+
+```text
+http://localhost:5173
+```
+
+### Prueba local con Twilio
+
+1. Levantar backend en el puerto `8000`.
+2. Exponer el backend con ngrok:
+
+```powershell
+ngrok http 8000
+```
+
+3. Configurar en Twilio Sandbox:
+
+```text
+When a message comes in: https://TU_NGROK/webhook/whatsapp
+Method: POST
+```
+
+4. Actualizar `backend/.env`:
+
+```env
+TWILIO_WEBHOOK_URL=https://TU_NGROK/webhook/whatsapp
+AUDIO_REPLY_PUBLIC_BASE_URL=https://TU_NGROK
+```
+
+5. Reiniciar backend.
+6. Unir el telefono al sandbox con el codigo `join ...`.
+7. Enviar mensajes al numero de Twilio Sandbox.
+
+### Uso del sistema
+
+WhatsApp:
+
+- Escribir `hola` muestra una bienvenida abierta.
+- Escribir `quiero un credito` inicia la precalificacion.
+- El bot solicita cedula, nombre si aplica, monto, plazo e ingreso mensual.
+- Con cedulas de prueba consulta la central de riesgo simulada.
+- El resultado final puede ser `PREAPROBADO` u `OBSERVADO`.
+- Escribir `asesor` deriva la conversacion al dashboard.
+- Escribir `responde en audio` activa respuestas por audio.
+- Escribir `responde en texto` vuelve a texto.
+
+Dashboard:
+
+- `/panel`: ver resumen operativo.
+- `/conversaciones`: atender chats, tomar casos, responder y cerrar conversaciones.
+- `/faqs`: cargar, listar y eliminar FAQs.
+- `/analitica`: revisar indicadores.
+- `/configuracion`: revisar URLs de API, WebSocket y webhook.
+
+Conversaciones:
+
+- Una sesion se cierra por inactividad tras `CONVERSATION_SESSION_TIMEOUT_MINUTES`.
+- Las conversaciones abandonadas se purgan tras `ABANDONED_CONVERSATION_RETENTION_DAYS`.
+- Las conversaciones cerradas vacias no se muestran en el dashboard.
+
+### Validacion y pruebas
 
 Pruebas backend:
 
 ```powershell
 cd backend
+.\.venv\Scripts\activate
 $env:DATABASE_URL="sqlite:///./credibot_test.db"
 $env:DEBUG="false"
 python -m pytest
