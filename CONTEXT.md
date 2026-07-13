@@ -80,6 +80,8 @@ Saludo inicial:
 - Si el usuario solo escribe un saludo como `hola`, `buenas` o `hola, buen dia`, el bot responde con una bienvenida abierta: puede ayudar con precalificacion, requisitos o asesor.
 - En ese caso no avanza inmediatamente a pedir nombre completo.
 - Cuando el usuario expresa interes en credito o entrega datos, el flujo estructurado continua y pregunta el siguiente dato requerido.
+- Frases de control como `responde en audio`, `responde en texto` o `quiero que me respondas en audio` no se guardan como nombre del cliente.
+- Si ya existe un nombre invalido guardado con palabras como `audio`, `texto` o `responde`, el orquestador lo limpia antes de continuar el flujo.
 
 ## Estados de conversacion
 
@@ -560,7 +562,7 @@ TWILIO_WEBHOOK_URL=https://.../webhook/whatsapp
 - `init_db()` asegura `conversations.response_mode` en bases ya creadas.
 - Endpoint de conversaciones responde `200`.
 - Frontend compila con `npm run build`.
-- Pruebas backend pasan: `45 passed`.
+- Pruebas backend pasan: `48 passed`.
 - Flujo de audio esta cubierto por pruebas.
 - Preferencia texto/audio por conversacion esta cubierta por pruebas.
 - Dashboard filtra conversaciones cerradas vacias y abandonadas.

@@ -59,6 +59,7 @@ class ConversationOrchestrator:
         customer = self.customer_repo.get_or_create(phone_number)
         conversation = self.conversation_repo.get_or_create_active(customer.id)
         application = self.application_repo.get_or_create_latest(customer.id)
+        self._clear_invalid_customer_name(customer)
 
         self._save_message(
             conversation_id=conversation.id,
@@ -475,7 +476,7 @@ class ConversationOrchestrator:
         if re.search(r"\d", value):
             return None
 
-        cleaned = re.sub(r"[^A-Za-z\s]", " ", value)
+        cleaned = re.sub(r"[^A-Za-zÁÉÍÓÚáéíóúÑñÜü\s]", " ", value)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
         if len(cleaned) < 2:
@@ -485,7 +486,21 @@ class ConversationOrchestrator:
         if cleaned.lower() in blacklist:
             return None
 
+        if not self.credit_service.is_valid_person_name(cleaned):
+            return None
+
         return cleaned[:120]
+
+    def _clear_invalid_customer_name(self, customer):
+        full_name = (getattr(customer, "full_name", "") or "").strip()
+        if not full_name:
+            return
+
+        if self.credit_service.is_valid_person_name(full_name):
+            return
+
+        customer.full_name = None
+        self.db.commit()
 
     def _extract_decimal(self, text: str):
         value = (text or "").strip()

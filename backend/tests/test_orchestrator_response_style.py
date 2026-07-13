@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from app.services.conversation.orchestrator import ConversationOrchestrator
+from app.services.conversation.credit_application_service import CreditApplicationService
 
 
 def _build_orchestrator_for_unit_tests() -> ConversationOrchestrator:
@@ -91,3 +92,17 @@ def test_plain_greeting_detection_accepts_accented_text():
     assert orchestrator._is_plain_greeting("Hola, buen dia")
     assert orchestrator._is_plain_greeting("Hola, buen día")
     assert not orchestrator._is_plain_greeting("Hola, quiero un credito")
+
+
+def test_preference_text_is_not_valid_person_name():
+    assert not CreditApplicationService.is_valid_person_name("Respondem por audio")
+    assert not CreditApplicationService.is_valid_person_name("responde en texto")
+    assert CreditApplicationService.is_valid_person_name("Carlos Pico")
+
+
+def test_extract_name_rejects_audio_preference_text():
+    orchestrator = _build_orchestrator_for_unit_tests()
+    orchestrator.credit_service = CreditApplicationService()
+
+    assert orchestrator._extract_name("Respondem por audio") is None
+    assert orchestrator._extract_name("Carlos Pico") == "Carlos Pico"

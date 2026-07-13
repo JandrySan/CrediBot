@@ -1,4 +1,6 @@
 from decimal import Decimal
+import re
+import unicodedata
 
 from app.services.credit_bureau.profile_service import (
     CreditBureauProfileService,
@@ -12,8 +14,9 @@ class CreditApplicationService:
         self.rule_engine = CreditRuleEngine()
 
     def apply_extracted_data(self, customer, application, data: dict, db):
-        if data.get("full_name") and not customer.full_name:
-            customer.full_name = data["full_name"]
+        full_name = (data.get("full_name") or "").strip()
+        if full_name and not customer.full_name and self.is_valid_person_name(full_name):
+            customer.full_name = full_name
 
         if data.get("amount") and application.amount is None:
             application.amount = Decimal(str(data["amount"]))
@@ -25,6 +28,56 @@ class CreditApplicationService:
             application.monthly_income = Decimal(str(data["monthly_income"]))
 
         db.commit()
+
+    @classmethod
+    def is_valid_person_name(cls, value: str) -> bool:
+        normalized = cls._normalize_text(value)
+        if not normalized:
+            return False
+
+        blocked_tokens = {
+            "audio",
+            "texto",
+            "responde",
+            "respondeme",
+            "responder",
+            "respondiendo",
+            "contestame",
+            "mandame",
+            "enviame",
+            "credito",
+            "creditos",
+            "prestamo",
+            "prestamos",
+            "monto",
+            "dolares",
+            "plazo",
+            "ingreso",
+            "ingresos",
+            "asesor",
+            "hola",
+            "buenas",
+        }
+        words = normalized.split()
+
+        if any(word in blocked_tokens for word in words):
+            return False
+
+        if len(words) < 2:
+            return False
+
+        return bool(re.fullmatch(r"[a-zñ]+(?:\s+[a-zñ]+){1,5}", normalized))
+
+    @staticmethod
+    def _normalize_text(value: str) -> str:
+        normalized = (value or "").strip().lower()
+        normalized = "".join(
+            char
+            for char in unicodedata.normalize("NFD", normalized)
+            if unicodedata.category(char) != "Mn"
+        )
+        normalized = re.sub(r"[^a-zñ\s]", " ", normalized)
+        return re.sub(r"\s+", " ", normalized).strip()
 
     def evaluate_if_complete(self, application, customer=None, db=None):
         if (

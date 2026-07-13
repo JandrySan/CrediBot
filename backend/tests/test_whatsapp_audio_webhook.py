@@ -1,7 +1,10 @@
 from unittest.mock import patch
+import uuid
 
 from fastapi.testclient import TestClient
 
+from app.database.session import SessionLocal
+from app.models.customer import Customer
 from main import app
 
 
@@ -31,6 +34,52 @@ class TestWhatsAppAudioWebhook:
         assert response.status_code == 200
         assert "En que te puedo ayudar" in response.text
         assert "nombre completo" not in response.text.lower()
+
+    def test_hola_clears_invalid_audio_preference_saved_as_name(self):
+        db = SessionLocal()
+        phone_number = f"+5939{uuid.uuid4().int % 100000000:08d}"
+        try:
+            customer = Customer(
+                phone_number=phone_number,
+                full_name="Respondem por audio",
+            )
+            db.add(customer)
+            db.commit()
+        finally:
+            db.close()
+
+        with patch(
+            "app.services.conversation.orchestrator.AIOrchestrator.analyze_message",
+            return_value={"intent": "saludo"},
+        ), patch(
+            "app.services.conversation.orchestrator.AIOrchestrator.get_model_name",
+            return_value="test",
+        ), patch(
+            "app.api.whatsapp.TextToSpeechService.generate_voice_note",
+            return_value={"success": False, "message": "tts desactivado en test"},
+        ):
+            with TestClient(app) as client:
+                response = client.post(
+                    "/webhook/whatsapp",
+                    data={
+                        "From": f"whatsapp:{phone_number}",
+                        "Body": "hola",
+                        "ProfileName": "Test",
+                        "MessageType": "text",
+                    },
+                )
+
+        db = SessionLocal()
+        try:
+            refreshed = db.query(Customer).filter(Customer.phone_number == phone_number).first()
+            assert refreshed is not None
+            assert refreshed.full_name is None
+        finally:
+            db.close()
+
+        assert response.status_code == 200
+        assert "En que te puedo ayudar" in response.text
+        assert "monto deseas solicitar" not in response.text
 
     def test_audio_message_uses_transcription_and_audio_handler(self):
         with patch(

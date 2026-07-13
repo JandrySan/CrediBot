@@ -65,11 +65,12 @@ Cliente WhatsApp
 7. La IA clasifica intencion y extrae datos.
 8. Si el usuario solo saluda, el bot responde con una bienvenida abierta y no pide el nombre todavia.
 9. El sistema guarda los datos extraidos en cliente o solicitud cuando el usuario inicia o continua la precalificacion.
-10. Si faltan datos, se pregunta el siguiente campo requerido.
-11. Si ya estan completos los datos, se aplica el motor de reglas.
-12. Se guarda la respuesta outbound.
-13. El bot responde por texto por defecto; si el usuario pidio audio, intenta responder con audio y cae a texto si falla.
-14. Se emite un evento WebSocket para actualizar el dashboard.
+10. Frases de control como `responde en audio` o `responde en texto` no se guardan como nombre del cliente.
+11. Si faltan datos, se pregunta el siguiente campo requerido.
+12. Si ya estan completos los datos, se aplica el motor de reglas.
+13. Se guarda la respuesta outbound.
+14. El bot responde por texto por defecto; si el usuario pidio audio, intenta responder con audio y cae a texto si falla.
+15. Se emite un evento WebSocket para actualizar el dashboard.
 
 ## Estados de conversacion
 
@@ -447,7 +448,7 @@ TWILIO_WEBHOOK_URL=https://<ngrok>/webhook/whatsapp
 - Backend conecta con PostgreSQL.
 - Inicializacion de tablas ejecutada.
 - Build frontend pasa con `npm run build`.
-- Pruebas backend pasan: `45 passed`.
+- Pruebas backend pasan: `48 passed`.
 - Flujo de audio cubierto por pruebas.
 - Envio del asesor por Twilio validado a nivel de servicio.
 - FAQ/RAG cubierto por pruebas unitarias de carga y busqueda.
