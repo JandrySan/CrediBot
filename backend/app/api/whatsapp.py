@@ -6,8 +6,12 @@ from sqlalchemy.orm import Session
 from twilio.twiml.messaging_response import MessagingResponse
 
 from app.database.session import get_db
+from app.repositories.conversation_repository import ConversationRepository
+from app.repositories.customer_repository import CustomerRepository
+from app.repositories.message_repository import MessageRepository
 from app.services.audio.speech_to_text import SpeechToTextService
 from app.services.audio.text_to_speech import TextToSpeechService
+from app.services.whatsapp.response_mode import ResponseModePreference
 from app.services.whatsapp.whatsapp_service import WhatsAppService
 from app.services.websocket.connection_manager import manager
 
@@ -19,6 +23,76 @@ def _safe_int(value: str | int | None, default: int = 0) -> int:
         return int(value) if value is not None else default
     except (TypeError, ValueError):
         return default
+
+
+def _get_or_create_conversation(db: Session, phone_number: str):
+    customer = CustomerRepository(db).get_or_create(phone_number)
+    return ConversationRepository(db).get_or_create_active(customer.id)
+
+
+def _apply_response_mode_preference(db: Session, phone_number: str, text: str):
+    requested_mode = ResponseModePreference.detect(text)
+    if not requested_mode:
+        return None, False
+
+    conversation = _get_or_create_conversation(db, phone_number)
+    if conversation.response_mode != requested_mode:
+        conversation = ConversationRepository(db).update_response_mode(
+            conversation=conversation,
+            response_mode=requested_mode,
+        )
+
+    return conversation, ResponseModePreference.is_command_only(text, requested_mode)
+
+
+def _resolve_response_mode(db: Session, phone_number: str) -> str:
+    customer = CustomerRepository(db).get_by_phone(phone_number)
+    if not customer:
+        return ResponseModePreference.TEXT
+
+    conversation = ConversationRepository(db).get_open_by_customer(customer.id)
+    mode = (getattr(conversation, "response_mode", "") or "").strip().upper()
+
+    if mode == ResponseModePreference.AUDIO:
+        return ResponseModePreference.AUDIO
+
+    return ResponseModePreference.TEXT
+
+
+def _preference_confirmation(response_mode: str) -> str:
+    if response_mode == ResponseModePreference.AUDIO:
+        return (
+            "Listo, a partir de ahora te respondere en audio. "
+            "Cuando quieras volver a texto, escribe: responde en texto."
+        )
+
+    return (
+        "Listo, a partir de ahora te respondere en texto. "
+        "Cuando quieras audio, escribe: responde en audio."
+    )
+
+
+def _build_twilio_reply(response_text: str, response_mode: str):
+    twilio_response = MessagingResponse()
+    clean_response_text = (response_text or "").strip()
+    tts_result = {"success": False, "message": "Respuesta en texto por preferencia del usuario."}
+    bot_response_type = "NONE"
+
+    if not clean_response_text:
+        return twilio_response, tts_result, bot_response_type
+
+    if response_mode == ResponseModePreference.AUDIO:
+        tts_service = TextToSpeechService()
+        tts_result = tts_service.generate_voice_note(clean_response_text)
+        is_audio_reply = bool(tts_result.get("success")) and bool(tts_result.get("media_url"))
+
+        if is_audio_reply:
+            reply_message = twilio_response.message()
+            reply_message.media(tts_result["media_url"])
+            return twilio_response, tts_result, "AUDIO"
+
+    twilio_response.message(clean_response_text)
+    return twilio_response, tts_result, "TEXT"
 
 
 @router.get("/audio/{filename}")
@@ -103,11 +177,32 @@ async def receive_whatsapp_message(
             twilio_response.message(response_text)
             return PlainTextResponse(str(twilio_response), media_type="application/xml")
 
-        response_text = whatsapp_service.process_audio_transcript(
+        preference_conversation, is_preference_command = _apply_response_mode_preference(
+            db=db,
             phone_number=From,
-            transcript_text=incoming_text,
-            profile_name=ProfileName,
+            text=incoming_text,
         )
+
+        if is_preference_command:
+            response_text = _preference_confirmation(preference_conversation.response_mode)
+            MessageRepository(db).save_message(
+                conversation_id=preference_conversation.id,
+                direction="INBOUND",
+                content=incoming_text,
+                message_type=incoming_message_type,
+            )
+            MessageRepository(db).save_message(
+                conversation_id=preference_conversation.id,
+                direction="OUTBOUND",
+                content=response_text,
+                message_type="TEXT",
+            )
+        else:
+            response_text = whatsapp_service.process_audio_transcript(
+                phone_number=From,
+                transcript_text=incoming_text,
+                profile_name=ProfileName,
+            )
     else:
         if not incoming_text:
             response_text = "No recibi texto para procesar. Por favor, envia un mensaje de texto o audio."
@@ -115,31 +210,40 @@ async def receive_whatsapp_message(
             twilio_response.message(response_text)
             return PlainTextResponse(str(twilio_response), media_type="application/xml")
 
-        response_text = whatsapp_service.process_inbound_message(
+        preference_conversation, is_preference_command = _apply_response_mode_preference(
+            db=db,
             phone_number=From,
             text=incoming_text,
-            message_type=incoming_message_type,
-            profile_name=ProfileName,
         )
 
-    twilio_response = MessagingResponse()
-    clean_response_text = (response_text or "").strip()
-    tts_result = {"success": False, "message": "Sin respuesta automatica en modo HANDOFF."}
-    is_audio_reply = False
-    bot_response_type = "NONE"
-
-    if clean_response_text:
-        tts_service = TextToSpeechService()
-        tts_result = tts_service.generate_voice_note(clean_response_text)
-        is_audio_reply = bool(tts_result.get("success")) and bool(tts_result.get("media_url"))
-
-        if is_audio_reply:
-            reply_message = twilio_response.message()
-            reply_message.media(tts_result["media_url"])
-            bot_response_type = "AUDIO"
+        if is_preference_command:
+            response_text = _preference_confirmation(preference_conversation.response_mode)
+            MessageRepository(db).save_message(
+                conversation_id=preference_conversation.id,
+                direction="INBOUND",
+                content=incoming_text,
+                message_type=incoming_message_type,
+            )
+            MessageRepository(db).save_message(
+                conversation_id=preference_conversation.id,
+                direction="OUTBOUND",
+                content=response_text,
+                message_type="TEXT",
+            )
         else:
-            twilio_response.message(clean_response_text)
-            bot_response_type = "TEXT"
+            response_text = whatsapp_service.process_inbound_message(
+                phone_number=From,
+                text=incoming_text,
+                message_type=incoming_message_type,
+                profile_name=ProfileName,
+            )
+
+    clean_response_text = (response_text or "").strip()
+    response_mode = _resolve_response_mode(db, From)
+    twilio_response, tts_result, bot_response_type = _build_twilio_reply(
+        response_text=clean_response_text,
+        response_mode=response_mode,
+    )
 
     await manager.broadcast(
         {
@@ -149,6 +253,7 @@ async def receive_whatsapp_message(
             "message_type": incoming_message_type,
             "profile_name": ProfileName,
             "bot_response_type": bot_response_type,
+            "bot_response_mode": response_mode,
             "bot_response": clean_response_text,
             "bot_media_url": tts_result.get("media_url", ""),
             "bot_audio_error": tts_result.get("message", ""),

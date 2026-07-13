@@ -143,6 +143,17 @@ class ConversationRepository:
         self.db.refresh(conversation)
 
         return conversation
+
+    def update_response_mode(self, conversation: Conversation, response_mode: str):
+        normalized = (response_mode or "TEXT").strip().upper()
+        if normalized not in {"TEXT", "AUDIO"}:
+            normalized = "TEXT"
+
+        conversation.response_mode = normalized
+        self.db.commit()
+        self.db.refresh(conversation)
+
+        return conversation
     
     def update_state_if_changed(self, conversation: Conversation, new_state: str):
         previous_state = conversation.current_state

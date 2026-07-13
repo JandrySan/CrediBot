@@ -14,6 +14,7 @@ class Conversation(Base):
     current_state = Column(String(50), nullable=False, default="START")
     status = Column(String(30), nullable=False, default="ACTIVE")
     result = Column(String(50), nullable=True)
+    response_mode = Column(String(20), nullable=False, default="TEXT", server_default="TEXT")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

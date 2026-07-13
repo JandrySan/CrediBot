@@ -51,7 +51,7 @@ CrediBot/
 ## Modelo de datos principal
 
 - `Customer`: cliente, telefono, nombre.
-- `Conversation`: conversacion activa, estado, status y resultado.
+- `Conversation`: conversacion activa, estado, status, resultado y preferencia de respuesta (`response_mode`).
 - `Message`: mensajes inbound/outbound, tipo texto/audio y contenido.
 - `CreditApplication`: solicitud de credito, monto, plazo, ingresos, resultado y motivo.
 - `AIAnalysis`: resultado del analisis IA por conversacion.
@@ -69,11 +69,11 @@ El webhook ahora usa `WhatsAppService` para procesar los mensajes:
 3. Si el mensaje trae audio, se descarga con `SpeechToTextService` y se transcribe.
 4. Se delega en `WhatsAppService.process_inbound_message()` o `process_audio_transcript()`.
 5. `WhatsAppService` internamente usa `ConversationOrchestrator` para el flujo estructurado o `AIOrchestrator` para el modo `AI_ONLY_MODE`.
-6. Se genera respuesta de texto.
-7. Si `AUDIO_REPLY_ENABLED=true` y `TextToSpeechService.generate_voice_note()` tiene exito, se responde con media; si no, con texto plano.
-8. Se emite evento WebSocket `NEW_MESSAGE` o `AUDIO_TRANSCRIPTION_FAILED`.
-
-Nota: el webhook no aplica actualmente una preferencia de respuesta por cliente. La salida de audio depende de la configuracion global `AUDIO_REPLY_ENABLED`.
+6. Antes de responder, el webhook detecta si el usuario pidio cambiar el modo de respuesta (`responde en audio`, `modo texto`, `solo texto`, etc.).
+7. La preferencia queda guardada en `conversations.response_mode` para la conversacion activa.
+8. Por defecto el bot responde en texto.
+9. Si `response_mode=AUDIO`, `AUDIO_REPLY_ENABLED=true` y `TextToSpeechService.generate_voice_note()` tiene exito, se responde con media; si no, con texto plano.
+10. Se emite evento WebSocket `NEW_MESSAGE` o `AUDIO_TRANSCRIPTION_FAILED`, incluyendo `bot_response_mode`.
 
 ## Estados de conversacion
 
@@ -292,12 +292,12 @@ GET /webhook/audio/{filename}
 
 ## Preferencia texto/audio
 
-Pendiente de implementacion.
+Implementada en el webhook de WhatsApp.
 
-La documentacion anterior describia este campo:
+La preferencia se guarda por conversacion activa en:
 
 ```text
-customers.preferred_response_type
+conversations.response_mode
 ```
 
 Valores:
@@ -305,21 +305,53 @@ Valores:
 - `TEXT`
 - `AUDIO`
 
-Pero el modelo `Customer` actual no incluye `preferred_response_type`, `init_db()` no crea ni migra esa columna y el webhook no cambia preferencia por frases del usuario.
+Comportamiento:
 
-Frases deseadas para una implementacion futura:
+- El valor por defecto es `TEXT`.
+- El usuario puede pedir audio o texto desde WhatsApp sin que el asesor intervenga.
+- Si el usuario solo envia un comando de cambio de modo, el bot confirma el cambio y no procesa ese texto como dato de credito.
+- Si el usuario pide audio pero `AUDIO_REPLY_ENABLED=false` o falla la generacion TTS, el bot responde en texto.
+- Si el usuario envia una nota de voz, el audio se transcribe y la respuesta sigue respetando `response_mode`; recibir audio no fuerza al bot a contestar con audio.
 
-- "respondeme en audio"
-- "quiero que me respondas en audio"
-- "nota de voz"
-- "por audio"
+Archivo principal:
+
+```text
+backend/app/api/whatsapp.py
+```
+
+Helper de deteccion:
+
+```text
+backend/app/services/whatsapp/response_mode.py
+```
+
+Frases que activan audio:
+
+- `responde en audio`
+- `respondeme en audio`
+- `modo audio`
+- `por audio`
+- `en audio`
+- `quiero audio`
+- `quiero voz`
+- `nota de voz`
 
 Frases que vuelven a texto:
 
-- "respondeme en texto"
-- "solo texto"
-- "no me respondas en audio"
-- "sin audio"
+- `responde en texto`
+- `respondeme en texto`
+- `modo texto`
+- `por texto`
+- `en texto`
+- `solo texto`
+- `por escrito`
+
+El evento WebSocket `NEW_MESSAGE` incluye:
+
+- `bot_response_type`: `TEXT`, `AUDIO` o `NONE`.
+- `bot_response_mode`: preferencia efectiva de la conversacion (`TEXT` o `AUDIO`).
+- `bot_media_url`: URL del audio si se genero.
+- `bot_audio_error`: detalle si se intento audio y fallo.
 
 ## Dashboard
 
@@ -434,7 +466,7 @@ Si `DATABASE_URL` esta vacio, se construye:
 postgresql+psycopg2://<DB_USER>:<DB_PASSWORD>@<DB_HOST>:<DB_PORT>/<DB_NAME>
 ```
 
-`init_db()` crea las tablas declaradas en los modelos actuales. No ejecuta migraciones incrementales ni asegura la columna `customers.preferred_response_type`.
+`init_db()` crea las tablas declaradas en los modelos actuales. Ademas asegura de forma incremental la columna `conversations.response_mode` para bases existentes, con valor por defecto `TEXT`.
 
 ## Variables de entorno importantes
 
@@ -509,26 +541,21 @@ TWILIO_WEBHOOK_URL=https://.../webhook/whatsapp
 
 - Backend conecta con PostgreSQL.
 - `init_db()` ejecuta correctamente.
+- `init_db()` asegura `conversations.response_mode` en bases ya creadas.
 - Endpoint de conversaciones responde `200`.
 - Frontend compila con `npm run build`.
-- Pruebas backend pasan con `DEBUG=false` inyectado en el entorno: `23 passed`.
+- Pruebas backend pasan: `26 passed`.
 - Flujo de audio esta cubierto por pruebas.
+- Preferencia texto/audio por conversacion esta cubierta por pruebas.
 - Maquina de estados con transiciones validadas.
 - FAQ/RAG esta cubierto por pruebas unitarias de carga y busqueda.
 - Sesiones de conversacion estan cubiertas por pruebas de restauracion, expiracion y limpieza.
 - Frontend de administracion de FAQs compila con `npm run build`.
 
-Estado actual de pruebas backend:
-
-- Al ejecutar `.\.venv\Scripts\python.exe -m pytest tests -q` desde `backend/`, la coleccion falla si `backend/.env` contiene `DEBUG=release`.
-- `settings.DEBUG` esta tipado como booleano, por lo que debe usar valores como `true` o `false`, o debe aislarse la configuracion de test.
-
 ## Brechas pendientes
 
 - Completar credenciales reales de Twilio y Groq.
-- Corregir `DEBUG` en `backend/.env` para permitir ejecucion de tests.
 - Configurar `TWILIO_WEBHOOK_URL` con ngrok o dominio publico.
-- Implementar o retirar la preferencia por cliente para texto/audio.
 - Cargar automaticamente los modulos de tools y corregir el ciclo completo de tool calling.
 - Alinear el guardado de mensajes del asesor con el resultado real de Twilio.
 - Deduplicar conversaciones por cliente en dashboard si ese sigue siendo el comportamiento esperado.
