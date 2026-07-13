@@ -1,3 +1,6 @@
+import json
+import re
+
 from app.services.ai.intent_detector import IntentDetector
 from app.services.ai.entity_extractor import EntityExtractor
 from app.services.ai.response_generator import ResponseGenerator
@@ -117,23 +120,30 @@ class AIOrchestrator:
             temperature=0.4,
         )
 
+        if not tool_results:
+            inline_tool_call = self._extract_inline_tool_call(final_text)
+            if inline_tool_call:
+                tool_name, arguments = inline_tool_call
+                tool_result = self._execute_tool(tool_name, arguments, db)
+                if tool_result is not None:
+                    response = self._generate_tool_result_response(
+                        messages=messages,
+                        tool_name=tool_name,
+                        tool_result=tool_result,
+                    )
+                    if response:
+                        return response
+
         if tool_results:
             for tr in tool_results:
                 tool_name = tr.get("tool_name", "")
-                tool_def = tool_registry.get(tool_name)
-                if not tool_def:
+                arguments = self._parse_tool_arguments(tr.get("arguments", "{}"))
+                if arguments is None:
                     continue
 
-                try:
-                    import json
-                    arguments = json.loads(tr.get("arguments", "{}"))
-                except (json.JSONDecodeError, TypeError):
+                result = self._execute_tool(tool_name, arguments, db)
+                if result is None:
                     continue
-
-                if tool_def.requires_db and db is not None:
-                    result = tool_def.fn(**arguments, db=db)
-                else:
-                    result = tool_def.fn(**arguments)
 
                 messages.append({
                     "role": "tool",
@@ -158,6 +168,74 @@ class AIOrchestrator:
             "Ahora mismo no puedo generar una respuesta con IA. "
             "Verifica que GROQ_API_KEY este configurada e intenta nuevamente."
         )
+
+    def _execute_tool(
+        self,
+        tool_name: str,
+        arguments: dict,
+        db: Session | None,
+    ) -> dict | None:
+        tool_def = tool_registry.get(tool_name)
+        if not tool_def:
+            return None
+
+        if tool_def.requires_db and db is not None:
+            return tool_def.fn(**arguments, db=db)
+
+        return tool_def.fn(**arguments)
+
+    def _extract_inline_tool_call(self, text: str) -> tuple[str, dict] | None:
+        value = (text or "").strip()
+        if not value:
+            return None
+
+        match = re.search(
+            r"<function=([a-zA-Z_][a-zA-Z0-9_]*)>\s*(\{.*?\})\s*</function>",
+            value,
+            flags=re.DOTALL,
+        )
+        if not match:
+            return None
+
+        arguments = self._parse_tool_arguments(match.group(2))
+        if arguments is None:
+            return None
+
+        return match.group(1), arguments
+
+    def _parse_tool_arguments(self, raw_arguments: str) -> dict | None:
+        try:
+            arguments = json.loads(raw_arguments or "{}")
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+        if not isinstance(arguments, dict):
+            return None
+
+        return arguments
+
+    def _generate_tool_result_response(
+        self,
+        messages: list[dict],
+        tool_name: str,
+        tool_result: dict,
+    ) -> str:
+        follow_up_messages = list(messages)
+        follow_up_messages.append({
+            "role": "user",
+            "content": (
+                f"Resultado de la herramienta {tool_name}: "
+                f"{json.dumps(tool_result, ensure_ascii=False)}\n\n"
+                "Responde al usuario de forma clara, natural y breve en espanol. "
+                "No muestres JSON ni etiquetas de herramientas."
+            ),
+        })
+
+        response = self.gateway.generate_chat(
+            messages=follow_up_messages,
+            temperature=0.4,
+        )
+        return (response or "").strip()
 
     def get_model_name(self) -> str:
         return self.gateway.get_model_name()
