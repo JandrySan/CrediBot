@@ -1,93 +1,178 @@
-# CrediBot - Contexto Tecnico
+# CrediBot - Contexto tecnico
 
-Actualizado: 2026-07-12
+Actualizado: 2026-07-13
 
 ## Resumen
 
-CrediBot es un MVP de asistente de precalificacion de creditos por WhatsApp. Automatiza la captura inicial de datos, permite mensajes de texto y audio, aplica reglas de negocio para entregar un resultado preliminar y ofrece un dashboard para que un asesor humano intervenga cuando sea necesario.
+CrediBot es un MVP de asistente de precalificacion de creditos por WhatsApp.
+Automatiza la captura inicial de datos, consulta una central de riesgo simulada,
+aplica reglas de negocio y permite intervencion humana desde un dashboard.
+
+El proyecto no tiene app movil. El producto actual es:
+
+- Backend FastAPI.
+- Dashboard web React.
+- WhatsApp por Twilio Sandbox.
+- PostgreSQL en Supabase.
+- Despliegue AWS con ECS, ECR, S3 y CloudFront.
+
+## Estado productivo
+
+Servicios actuales:
+
+- Frontend: `https://d30z3dsmpm7ctx.cloudfront.net`
+- API: `https://d30z3dsmpm7ctx.cloudfront.net/api/...`
+- Webhook: `https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp`
+- Audios: `https://d30z3dsmpm7ctx.cloudfront.net/webhook/audio/{filename}`
+- Supabase project ref: `subcovtwgoqbitvzoyzy`
+- ECS cluster: `credibot-cluster`
+- ECS service: `credibot-backend-service`
+- ECR repository: `credibot-backend`
+- Twilio Sandbox: `whatsapp:+14155238886`
 
 ## Stack
 
 - Backend: FastAPI, SQLAlchemy, Pydantic Settings.
-- Base de datos: PostgreSQL.
+- Base de datos: PostgreSQL/Supabase.
 - Frontend: React, TypeScript, Vite, MUI, React Query.
 - WhatsApp: Twilio Sandbox.
 - IA: Groq.
-- Audio STT: Groq por defecto, faster-whisper local opcional.
-- Audio TTS: gTTS + conversion a OGG/Opus con PyAV.
+- STT: Groq por defecto, faster-whisper local opcional.
+- TTS: gTTS + conversion a OGG/Opus con PyAV.
 - FAQ/RAG: busqueda por palabras clave con reranking opcional via Groq.
-- Sesiones: timeout configurable, restauracion y limpieza de conversaciones abiertas.
 - Tiempo real: WebSocket.
+- CI/CD: GitHub Actions.
+- AWS: OIDC, ECR, ECS Fargate, ALB, S3, CloudFront, Secrets Manager.
 
-## Arquitectura
+## Estructura
 
 ```text
 CrediBot/
-|-- backend/                 FastAPI + SQLAlchemy
-|   |-- app/api/             webhook whatsapp, dashboard, websocket
-|   |-- app/services/
-|   |   |-- ai/              IA (gateway, orquestador, detector, extractor, generador)
-|   |   |-- audio/           speech-to-text, text-to-speech
-|   |   |-- conversation/    orquestador de flujo, servicio de estados, servicio de solicitudes
-|   |   |-- rules/           motor de reglas de credito
-|   |   |-- tools/           sistema de tools (registro, ejecutor, tools financieras/politicas/cliente)
-|   |   |-- websocket/       administrador de conexiones
-|   |   `-- whatsapp/        servicio de enrutamiento de mensajes, twilio service
+|-- backend/
+|   |-- app/api/             webhook, dashboard, websocket
+|   |-- app/database/        engine, sesiones e inicializacion incremental
+|   |-- app/models/          modelos SQLAlchemy
 |   |-- app/repositories/    acceso a datos
-|   |-- app/models/          entidades SQLAlchemy
-|   |-- app/state_machine/   estados y transiciones formales
-|   |-- app/database/        engine, session, init
+|   |-- app/services/
+|   |   |-- ai/              Groq, intencion, extraccion, respuesta
+|   |   |-- audio/           STT y TTS
+|   |   |-- conversation/    orquestador, estados, solicitud de credito
+|   |   |-- credit_bureau/   consulta a central simulada
+|   |   |-- rag/             FAQ/RAG
+|   |   |-- rules/           reglas de precalificacion
+|   |   |-- tools/           tools para IA
+|   |   |-- websocket/       broadcaster
+|   |   `-- whatsapp/        Twilio y preferencias texto/audio
+|   |-- app/state_machine/   estados y transiciones
 |   `-- tests/               pruebas backend
-|-- frontend/                React + TypeScript + MUI
-|   |-- src/components/      layout y componentes de conversaciones
-|   |-- src/hooks/           hooks de datos y WebSocket
-|   |-- src/services/        clientes HTTP
-|   |-- src/pages/           dashboard y administracion de FAQs
-|   `-- src/types/           tipos TypeScript
+|-- frontend/                dashboard React
+|-- supabase/migrations/     schema y datos simulados
+|-- docs/                    documentacion operativa
+|-- .github/workflows/       CI/CD
 |-- README.md
 `-- CONTEXT.md
 ```
 
 ## Modelo de datos principal
 
-- `Customer`: cliente, telefono, nombre.
-- `Conversation`: conversacion activa, estado, status, resultado y preferencia de respuesta (`response_mode`).
-- `Message`: mensajes inbound/outbound, tipo texto/audio y contenido.
-- `CreditApplication`: solicitud de credito, monto, plazo, ingresos, resultado y motivo.
-- `AIAnalysis`: resultado del analisis IA por conversacion.
-- `ConversationStateHistory`: historial de transiciones de estado.
-- `KnowledgeBase`: FAQs activas para politicas, requisitos, tasas, documentos y condiciones.
+- `Customer`: telefono, cedula (`national_id`) y nombre.
+- `Conversation`: estado, status, resultado y `response_mode`.
+- `Message`: mensajes inbound/outbound, texto/audio.
+- `CreditApplication`: monto, plazo, ingreso, resultado y motivo.
+- `AIAnalysis`: resultado del analisis IA.
+- `ConversationStateHistory`: historial de transiciones.
+- `KnowledgeBase`: FAQs activas.
+
+Inicializacion incremental:
+
+- `customers.national_id` se agrega si falta.
+- `idx_customers_national_id` se crea si falta.
+- `conversations.response_mode` se agrega si falta.
+- `credit_applications.reason` se convierte a `TEXT` en PostgreSQL si estaba
+  limitado.
+
+## Central de riesgo simulada
+
+Schema: `credit_bureau`.
+
+Objetos:
+
+- `people`
+- `credit_accounts`
+- `payment_history`
+- `credit_score_snapshots`
+- `risk_events`
+- `credit_inquiries`
+- `credit_profile_summary`
+- `find_profile(identifier TEXT)`
+
+La funcion `find_profile` acepta cedula o telefono y devuelve un perfil
+normalizado para CrediBot. El servicio que la consume esta en:
+
+```text
+backend/app/services/credit_bureau/profile_service.py
+```
+
+Campos importantes:
+
+- Identidad: cedula, telefono, nombre, edad, provincia, ciudad.
+- Trabajo: estado laboral, ocupacion, ingreso reportado.
+- Central: estado, motivo, score, riesgo.
+- Deuda: cuentas, deuda pendiente, cuota mensual, relacion deuda/ingreso.
+- Mora: mora maxima, pagos incumplidos, pagos tardios.
+- Eventos: castigados, judiciales, reestructurados.
+- Consultas recientes.
+- Cuota maxima recomendada.
+- Resultado preliminar: `APTO` u `OBSERVADO`.
+
+Consulta de prueba:
+
+```sql
+SELECT *
+FROM credit_bureau.find_profile('9990000003');
+```
+
+Resultado esperado resumido:
+
+```text
+Maria Torres Cedeno
+score: 485
+risk_level: HIGH
+deuda: 2100
+mora maxima: 90
+resultado: OBSERVADO
+```
 
 ## Flujo WhatsApp
 
-Archivo: `backend/app/api/whatsapp.py`
+Archivo principal:
 
-El webhook ahora usa `WhatsAppService` para procesar los mensajes:
+```text
+backend/app/api/whatsapp.py
+```
+
+Pasos:
 
 1. Twilio llama `POST /webhook/whatsapp`.
-2. Se valida el remitente (`From`).
-3. Si el mensaje trae audio, se descarga con `SpeechToTextService` y se transcribe.
-4. Se delega en `WhatsAppService.process_inbound_message()` o `process_audio_transcript()`.
-5. `WhatsAppService` internamente usa `ConversationOrchestrator` para el flujo estructurado o `AIOrchestrator` para el modo `AI_ONLY_MODE`.
-6. Antes de responder, el webhook detecta si el usuario pidio cambiar el modo de respuesta (`responde en audio`, `modo texto`, `solo texto`, etc.).
-7. La preferencia queda guardada en `conversations.response_mode` para la conversacion activa.
-8. Por defecto el bot responde en texto.
-9. Si `response_mode=AUDIO`, `AUDIO_REPLY_ENABLED=true` y `TextToSpeechService.generate_voice_note()` tiene exito, se responde con media; si no, con texto plano.
-10. Se emite evento WebSocket `NEW_MESSAGE` o `AUDIO_TRANSCRIPTION_FAILED`, incluyendo `bot_response_mode`.
+2. Se valida `From`.
+3. Se detecta audio entrante y se transcribe si aplica.
+4. Se detecta cambio de preferencia: audio/texto.
+5. Se delega a `WhatsAppService`.
+6. `WhatsAppService` usa `ConversationOrchestrator`.
+7. Se guarda mensaje inbound.
+8. La IA clasifica intencion y extrae entidades.
+9. El orquestador rellena campos, consulta central y cambia estados.
+10. Si la solicitud esta completa, se evalua.
+11. Se guarda mensaje outbound.
+12. Se responde por texto o por audio segun `response_mode`.
+13. Se emite evento WebSocket.
 
-Saludo inicial:
-
-- Si el usuario solo escribe un saludo como `hola`, `buenas` o `hola, buen dia`, el bot responde con una bienvenida abierta: puede ayudar con precalificacion, requisitos o asesor.
-- En ese caso no avanza inmediatamente a pedir nombre completo.
-- Cuando el usuario expresa interes en credito o entrega datos, el flujo estructurado continua y pregunta el siguiente dato requerido.
-- Frases de control como `responde en audio`, `responde en texto` o `quiero que me respondas en audio` no se guardan como nombre del cliente.
-- Si ya existe un nombre invalido guardado con palabras como `audio`, `texto` o `responde`, el orquestador lo limpia antes de continuar el flujo.
-
-## Estados de conversacion
+## Estados
 
 Definidos en `backend/app/state_machine/states.py`:
 
 - `START`
+- `ASK_NATIONAL_ID`
 - `ASK_NAME`
 - `ASK_AMOUNT`
 - `ASK_TERM`
@@ -96,160 +181,100 @@ Definidos en `backend/app/state_machine/states.py`:
 - `HANDOFF`
 - `END`
 
-### Reglas de transicion
-
-Archivo: `backend/app/state_machine/transitions.py`
-
-Define `STATE_TRANSITIONS` como un diccionario que mapea cada estado a la lista de estados destino validos:
+Transiciones principales:
 
 ```text
-START       -> ASK_NAME, ASK_AMOUNT, HANDOFF, END
-ASK_NAME    -> ASK_AMOUNT, ASK_TERM, ASK_INCOME, SHOW_RESULT, HANDOFF, END
-ASK_AMOUNT  -> ASK_TERM, ASK_INCOME, SHOW_RESULT, HANDOFF, END
-ASK_TERM    -> ASK_INCOME, SHOW_RESULT, HANDOFF, END
-ASK_INCOME  -> SHOW_RESULT, HANDOFF, END
-SHOW_RESULT -> HANDOFF, END
-HANDOFF     -> END
-END         -> (ninguna)
+START           -> ASK_NATIONAL_ID, ASK_NAME, ASK_AMOUNT, HANDOFF, END
+ASK_NATIONAL_ID -> ASK_NAME, ASK_AMOUNT, ASK_TERM, ASK_INCOME, SHOW_RESULT, HANDOFF, END
+ASK_NAME        -> ASK_AMOUNT, ASK_TERM, ASK_INCOME, SHOW_RESULT, HANDOFF, END
+ASK_AMOUNT      -> ASK_TERM, ASK_INCOME, SHOW_RESULT, HANDOFF, END
+ASK_TERM        -> ASK_INCOME, SHOW_RESULT, HANDOFF, END
+ASK_INCOME      -> SHOW_RESULT, HANDOFF, END
+SHOW_RESULT     -> HANDOFF, END
+HANDOFF         -> END
+END             -> ninguna
 ```
 
-El `ConversationOrchestrator._change_state()` valida contra estas reglas antes de ejecutar cualquier transicion. Si la transicion no es valida, lanza `ValueError`.
+`ConversationOrchestrator._change_state()` valida las transiciones en runtime.
 
-Funciones disponibles:
+## Extraccion de datos
 
-- `can_transition(current_state: str, next_state: str) -> bool`
-- `is_valid_transition(current: ConversationState, next: ConversationState) -> bool`
-- `get_allowed_transitions(state: ConversationState) -> list[ConversationState]`
+Archivo:
 
-## Motor de reglas
+```text
+backend/app/services/ai/entity_extractor.py
+```
 
-Archivo: `backend/app/services/rules/credit_rule_engine.py`
+Entidades:
 
-Reglas:
+- `national_id`
+- `full_name`
+- `amount`
+- `term_months`
+- `monthly_income`
+
+El orquestador tiene fallback local para extraer cedula, monto, plazo y nombre
+cuando la IA no devuelve el campo esperado.
+
+## Evaluacion de credito
+
+Reglas base:
 
 - `monthly_income < 600` -> `OBSERVADO`
 - `amount > monthly_income * 8` -> `OBSERVADO`
 - `term_months > 60` -> `OBSERVADO`
 - Caso contrario -> `PREAPROBADO`
 
-La IA no decide la aprobacion. La decision sale del motor de reglas.
+Luego:
 
-## Sistema de Tools
+- Si la central simulada devuelve `preliminary_history_result=OBSERVADO`, el
+  resultado final queda `OBSERVADO`.
+- El motivo incluye estado central, riesgo, score, deuda, mora, pagos
+  incumplidos y razones de riesgo.
 
-Directorio: `backend/app/services/tools/`
+Archivos:
 
-El sistema de tools esta parcialmente implementado. La intencion es permitir que la IA invoque funciones especificas (function calling) para calculos, consultas a DB o busqueda en politicas.
+- `backend/app/services/rules/credit_rule_engine.py`
+- `backend/app/services/conversation/credit_application_service.py`
 
-### Arquitectura
+## Audio
 
-- `tool_registry.py` — Registro central singleton. Decorador `@tool(name, description, parameters, requires_db)` para registrar funciones como tools.
-- `tool_executor.py` — `ToolExecutor` recibe las `tool_calls` de Groq, busca la tool registrada, la ejecuta y retorna el resultado.
-- `tool_registry.to_openai_specs()` — Genera las definiciones en formato JSON Schema que Groq entiende.
+Entrada:
 
-Brecha actual: las tools se registran solo cuando se importan sus modulos (`financial_tools.py`, `customer_tools.py`, `policy_tools.py`). Actualmente no hay un import central en startup o en `AIOrchestrator`, por lo que el registro puede quedar vacio.
+- `SpeechToTextService` descarga audio desde Twilio.
+- Proveedores: `groq`, `local`, `groq_local_fallback`.
+- La transcripcion entra al flujo normal.
 
-### Tools registradas
+Salida:
 
-| Tool | Descripcion | Requiere DB |
-|---|---|---|
-| `calcular_amortizacion(monto, plazo_meses, tasa_interes_anual)` | Calcula cuota mensual, total intereses y tabla mes a mes | No |
-| `consultar_estado_cliente(telefono)` | Devuelve datos del cliente e historial de solicitudes | Si |
-| `obtener_reglas_credito()` | Devuelve las reglas del motor de precalificacion | No |
-| `consultar_politica(consulta)` | Busca en FAQ por palabras clave y devuelve respuestas | No |
+- `TextToSpeechService` genera MP3 con gTTS.
+- Convierte a OGG/Opus.
+- Sirve el archivo en `GET /webhook/audio/{filename}`.
+- Twilio recibe `<Media>URL</Media>`.
 
-### Integracion con IA
+Preferencia:
 
-Objetivo esperado de `AIGateway.generate_with_tools()`:
-
-1. Enviar las definiciones de tools a Groq via el parametro `tools`.
-2. Si la respuesta contiene `tool_calls`, extraer el nombre, argumentos y `tool_call_id`.
-3. Ejecutar cada tool mediante `ToolExecutor`.
-4. Retroalimentar los resultados a Groq para generar la respuesta final al usuario.
-5. Soporta multiples rondas de tool calling (max 5 por defecto).
-
-`AIOrchestrator.generate_whatsapp_reply()` integra todo: recibe el mensaje del usuario, construye el historial, pasa las tools disponibles, y orquesta el ciclo de llamadas automaticamente.
-
-Estado actual: `AIGateway.generate_with_tools()` detecta `tool_calls`, pero no ejecuta las tools dentro del loop y agrega mensajes `tool` vacios. Luego `AIOrchestrator` intenta ejecutar las tools en una segunda etapa. Este flujo necesita correccion para conservar el mensaje assistant con `tool_calls`, ejecutar herramientas con resultados reales y devolver esos resultados al modelo en el formato esperado.
-
-### Como agregar una tool nueva
-
-```python
-from app.services.tools.tool_registry import tool
-
-@tool(
-    name="mi_tool",
-    description="Descripcion clara de lo que hace",
-    parameters={
-        "type": "object",
-        "properties": {
-            "param1": {
-                "type": "string",
-                "description": "Descripcion del parametro",
-            },
-        },
-        "required": ["param1"],
-    },
-    requires_db=False,  # True si necesita acceso a la BD
-)
-def mi_tool(param1: str, db=None) -> dict:
-    # Si requires_db=True, recibe db: Session automaticamente
-    return {"resultado": param1}
-```
-
-La tool se registra automaticamente al importar el modulo. Importar en `AIOrchestrator` o en el startup de la app.
-
-## IA
-
-Servicios en `backend/app/services/ai/`:
-
-- `AIGateway`: encapsula llamadas a Groq. Soporta `generate_json()`, `generate_text()`, `generate_chat()` y `generate_with_tools()`.
-- `AIOrchestrator`: coordina intencion, extraccion, respuesta y tool calling automatico.
-- `IntentDetector`: clasifica intencion (`saludo`, `credito`, `asesor`, `desconocido`).
-- `EntityExtractor`: extrae `full_name`, `amount`, `term_months`, `monthly_income`.
-- `ResponseGenerator`: pule respuestas sin cambiar datos, resultados ni reglas.
-
-### Modo recomendado
-
-```env
-AI_ONLY_MODE=false
-```
-
-Con `AI_ONLY_MODE=false` el sistema usa estados y reglas de negocio. Con `AI_ONLY_MODE=true` la IA responde conversacionalmente sin reglas.
-
-Nota: el uso de tools requiere corregir la carga de modulos y el ciclo de tool calling descrito arriba.
+- Se guarda en `conversations.response_mode`.
+- Valores: `TEXT`, `AUDIO`.
+- `responde en audio` activa audio.
+- `responde en texto` vuelve a texto.
+- Recibir una nota de voz no obliga al bot a contestar en audio.
 
 ## FAQ/RAG
 
-Directorio: `backend/app/services/rag/`
+Directorio:
 
-La Fase 3 esta implementada como un sistema FAQ/RAG basico:
+```text
+backend/app/services/rag/
+```
 
-- `models.py`: define `KnowledgeBase` con `id`, `question`, `answer`, `category`, `keywords`, `is_active`, `created_at` y `updated_at`.
-- `faq_loader.py`: carga FAQs desde JSON o CSV. Acepta campos en ingles (`question`, `answer`, `category`, `keywords`) o espanol (`pregunta`, `respuesta`, `categoria`, `palabras_clave`).
-- `retrieval_service.py`: busca FAQs activas por coincidencia de palabras clave y texto. Si Groq esta disponible, intenta reranking con LLM; si no, usa ranking local.
-- `embedding_service.py`: placeholder para una futura integracion con embeddings o pgvector.
+Endpoints:
 
-Endpoints de dashboard:
+- `POST /api/dashboard/faq/upload`
+- `GET /api/dashboard/faq`
+- `DELETE /api/dashboard/faq/{id}`
 
-- `POST /api/dashboard/faq/upload`: carga archivo JSON o CSV.
-- `GET /api/dashboard/faq`: lista FAQs activas.
-- `DELETE /api/dashboard/faq/{id}`: eliminacion logica, marca `is_active=false`.
-
-Frontend:
-
-- Ruta `/faqs` en `frontend/src/App.tsx`.
-- `frontend/src/pages/FaqAdminPage.tsx`: pantalla para cargar JSON/CSV, listar FAQs activas y eliminar FAQs.
-- `frontend/src/services/faq.service.ts`: cliente HTTP para endpoints FAQ.
-- `frontend/src/hooks/useFaqs.ts`: hooks React Query para listado, carga y eliminacion.
-- `frontend/src/types/faq.ts`: tipos `FaqItem` y `FaqUploadResult`.
-
-Integracion conversacional:
-
-- En `AIOrchestrator.generate_whatsapp_reply()`, si hay una sesion DB disponible, `RetrievalService` construye contexto FAQ y lo agrega al prompt del modelo.
-- En `ConversationOrchestrator`, si el usuario hace una pregunta sobre requisitos, documentos, tasas, politicas, condiciones o plazo maximo, se busca una FAQ relevante. Si existe, el bot responde esa informacion y ofrece continuar con la precalificacion.
-- `ResponseGenerator.generate()` acepta `faq_context` para pulir la respuesta sin inventar datos fuera de la FAQ.
-
-Formato JSON soportado:
+Formato JSON:
 
 ```json
 [
@@ -262,330 +287,164 @@ Formato JSON soportado:
 ]
 ```
 
-## WhatsApp Service
+La busqueda se usa para preguntas sobre requisitos, documentos, tasas,
+politicas, condiciones y plazo maximo.
 
-Archivo: `backend/app/services/whatsapp/whatsapp_service.py`
+## Sistema de tools
 
-`WhatsAppService` centraliza el procesamiento de mensajes entrantes:
-
-- `process_inbound_message(phone_number, text, message_type, profile_name)` — para mensajes de texto.
-- `process_audio_transcript(phone_number, transcript_text, profile_name)` — para mensajes de audio transcritos.
-
-Internamente decide si usar `ConversationOrchestrator` (flujo estructurado) o `AIOrchestrator` (modo IA) segun `AI_ONLY_MODE`.
-
-## Audio
-
-### Entrada
-
-Archivo: `backend/app/services/audio/speech_to_text.py`
-
-- Descarga media desde Twilio.
-- Soporta proveedor `groq`, `local` y `groq_local_fallback`.
-- Retorna texto transcrito para procesarlo como mensaje normal.
-
-### Salida
-
-Archivo: `backend/app/services/audio/text_to_speech.py`
-
-- Genera MP3 con gTTS.
-- Convierte MP3 a OGG/Opus.
-- Construye URL publica para Twilio.
-- Limpia audios antiguos.
-
-Endpoint publico:
+Directorio:
 
 ```text
-GET /webhook/audio/{filename}
+backend/app/services/tools/
 ```
 
-## Preferencia texto/audio
+Tools actuales:
 
-Implementada en el webhook de WhatsApp.
+- `calcular_amortizacion`
+- `consultar_estado_cliente`
+- `obtener_reglas_credito`
+- `consultar_politica`
+- `consultar_central_riesgo`
 
-La preferencia se guarda por conversacion activa en:
-
-```text
-conversations.response_mode
-```
-
-Valores:
-
-- `TEXT`
-- `AUDIO`
-
-Comportamiento:
-
-- El valor por defecto es `TEXT`.
-- El usuario puede pedir audio o texto desde WhatsApp sin que el asesor intervenga.
-- Si el usuario solo envia un comando de cambio de modo, el bot confirma el cambio y no procesa ese texto como dato de credito.
-- Frases largas de preferencia como `quiero que me respondas en audio` tambien se tratan como comando de modo si no traen datos de credito.
-- Si la frase combina preferencia y contenido de negocio, por ejemplo `responde en audio, quiero un credito de 2000`, cambia el modo y procesa el mensaje.
-- Si el usuario pide audio pero `AUDIO_REPLY_ENABLED=false` o falla la generacion TTS, el bot responde en texto.
-- Si el usuario envia una nota de voz, el audio se transcribe y la respuesta sigue respetando `response_mode`; recibir audio no fuerza al bot a contestar con audio.
-
-Archivo principal:
-
-```text
-backend/app/api/whatsapp.py
-```
-
-Helper de deteccion:
-
-```text
-backend/app/services/whatsapp/response_mode.py
-```
-
-Frases que activan audio:
-
-- `responde en audio`
-- `respondeme en audio`
-- `modo audio`
-- `por audio`
-- `en audio`
-- `quiero audio`
-- `quiero voz`
-- `nota de voz`
-
-Frases que vuelven a texto:
-
-- `responde en texto`
-- `respondeme en texto`
-- `modo texto`
-- `por texto`
-- `en texto`
-- `solo texto`
-- `por escrito`
-
-El evento WebSocket `NEW_MESSAGE` incluye:
-
-- `bot_response_type`: `TEXT`, `AUDIO` o `NONE`.
-- `bot_response_mode`: preferencia efectiva de la conversacion (`TEXT` o `AUDIO`).
-- `bot_media_url`: URL del audio si se genero.
-- `bot_audio_error`: detalle si se intento audio y fallo.
+La integracion de tool calling ya evita respuestas tecnicas de tags internos,
+pero sigue siendo un area candidata a endurecimiento con mas pruebas de
+conversaciones largas.
 
 ## Dashboard
 
-Archivo: `backend/app/api/dashboard.py`
+Backend:
 
-Endpoints:
-
-- `GET /api/dashboard/stats`
-- `GET /api/dashboard/conversations`
-- `GET /api/dashboard/conversations/{id}/messages`
-- `POST /api/dashboard/conversations/{id}/take`
-- `POST /api/dashboard/conversations/{id}/reply`
-- `POST /api/dashboard/conversations/{id}/close`
-- `POST /api/dashboard/conversations/cleanup-expired`
-- `POST /api/dashboard/faq/upload`
-- `GET /api/dashboard/faq`
-- `DELETE /api/dashboard/faq/{id}`
-
-Comportamiento:
-
-- Lista conversaciones con datos de cliente y solicitud.
-- Estado actual: si un cliente tiene varias conversaciones o varias solicitudes, puede aparecer mas de una fila para el mismo cliente.
-- Permite tomar conversacion como asesor.
-- Permite responder al cliente por WhatsApp.
-- Permite cerrar conversacion en HANDOFF con resolucion (APPROVED/DENIED/RESOLVED).
-- Permite disparar limpieza manual de conversaciones abiertas expiradas.
+```text
+backend/app/api/dashboard.py
+```
 
 Frontend:
 
-- `App.tsx` usa `react-router-dom` con rutas `/` y `/faqs`.
-- `Sidebar.tsx` navega entre Panel y FAQs.
-- `ConversationChat.tsx` soporta un campo opcional `tool_calls` por mensaje y renderiza chips con el nombre de la tool si el backend los devuelve.
-
-Nota: la visualizacion de `tool_calls` ya esta preparada en frontend, pero el backend todavia no persiste tool calls por mensaje.
-
-## Sesiones de conversacion
-
-La Fase 4 esta implementada con timeout configurable, restauracion y limpieza de sesiones.
-
-Configuracion:
-
-```env
-CONVERSATION_SESSION_TIMEOUT_MINUTES=60
-CONVERSATION_CLEANUP_BATCH_SIZE=100
-ABANDONED_CONVERSATION_RETENTION_DAYS=7
+```text
+frontend/src
 ```
 
-Comportamiento:
+Funciones:
 
-- `ConversationRepository.get_or_create_active(customer_id, timeout_minutes=None)` reutiliza una conversacion `ACTIVE` o `HANDOFF` si no expiro.
-- Si la conversacion abierta expiro, `ConversationRepository.close_expired()` la marca como `CLOSED`, mueve `current_state` a `END`, asigna `result=EXPIRADO` si no tenia resultado y crea una nueva conversacion `ACTIVE`.
-- `ConversationRepository.restore_session(customer_id, timeout_minutes=None)` devuelve la sesion abierta si existe y no expiro; si expiro, la cierra y devuelve `None`.
-- `ConversationRepository.cleanup_expired_open_sessions()` cierra sesiones abiertas vencidas por lotes.
-- `ConversationRepository.purge_abandoned_closed_sessions()` elimina conversaciones cerradas por abandono (`result=EXPIRADO`, `CANCELADA` o `CANCELADO`) cuando superan `ABANDONED_CONVERSATION_RETENTION_DAYS`.
-- `ConversationRepository.purge_empty_closed_sessions()` elimina conversaciones `CLOSED` sin mensajes, porque no tienen historial util para el asesor.
-- La purga elimina tambien mensajes, analisis IA e historial de estados asociados a esas conversaciones.
-- No borra conversaciones cerradas por asesor, preaprobadas, observadas ni resueltas.
-- El dashboard oculta conversaciones cerradas vacias y abandonadas para evitar filas con chat vacio o resultados de solicitudes que no corresponden a esa conversacion.
-- `ConversationManager` expone `restore_session(phone_number)` y `cleanup_expired_sessions()`, usando `CONVERSATION_SESSION_TIMEOUT_MINUTES`.
-- `ConversationManager.cleanup_sessions()` combina cierre de sesiones abiertas vencidas y purga de conversaciones abandonadas antiguas.
-- `MessageRepository.save_message()` actualiza `conversations.updated_at` para que el timeout se base en actividad real.
-- El startup ejecuta una limpieza inicial despues de `init_db()`.
+- Estadisticas.
+- Lista de conversaciones.
+- Detalle de chat.
+- Cedula y datos de solicitud.
+- Handoff y respuesta de asesor.
+- Cierre de conversacion.
+- Limpieza de expiradas.
+- CRUD logico de FAQs.
+- WebSocket para eventos.
 
-Endpoint operativo:
-
-- `POST /api/dashboard/conversations/cleanup-expired`: cierra conversaciones abiertas expiradas y purga conversaciones abandonadas antiguas. Devuelve `closed_count` y `deleted_count`.
-
-## Respuesta de asesor humano
-
-Archivo: `backend/app/api/dashboard.py`
-
-Flujo:
-
-1. El asesor envia mensaje desde el dashboard.
-2. El backend obtiene la conversacion y cliente.
-3. El backend guarda el mensaje como `OUTBOUND`.
-4. `TwilioWhatsAppService` intenta enviar el mensaje al numero del cliente.
-5. Si Twilio falla, el endpoint devuelve `success=false`, pero el mensaje ya quedo guardado.
-6. Se emite evento WebSocket `AGENT_REPLY`.
-
-Pendiente: decidir si el mensaje debe guardarse solo despues de un envio exitoso o si debe persistirse con estado de fallo.
+Nota: el endpoint de conversaciones puede devolver mas de una fila por cliente
+si hay varias conversaciones o solicitudes.
 
 ## WebSocket
 
-Archivos:
+Endpoint:
 
-- `backend/app/api/websocket.py`
-- `backend/app/services/websocket/connection_manager.py`
-- `frontend/src/hooks/useDashboardSocket.ts`
+```text
+/ws/dashboard
+```
 
-Eventos relevantes:
+Eventos:
 
 - `NEW_MESSAGE`
 - `AUDIO_TRANSCRIPTION_FAILED`
 - `AGENT_REPLY`
 - `CONVERSATION_CLOSED`
 
-Uso:
+`NEW_MESSAGE` incluye:
 
-- Mantener actualizado el dashboard sin depender solo del polling.
-- Notificar nuevos mensajes o respuestas.
+- `bot_response_type`: `TEXT`, `AUDIO` o `NONE`.
+- `bot_response_mode`: `TEXT` o `AUDIO`.
+- `bot_media_url`.
+- `bot_audio_error`.
 
-## Base de datos
+## Sesiones
 
-Configuracion:
-
-```env
-DATABASE_URL=
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=credibot
-DB_USER=postgres
-DB_PASSWORD=12345678
-```
-
-Si `DATABASE_URL` esta vacio, se construye:
-
-```text
-postgresql+psycopg2://<DB_USER>:<DB_PASSWORD>@<DB_HOST>:<DB_PORT>/<DB_NAME>
-```
-
-`init_db()` crea las tablas declaradas en los modelos actuales. Ademas asegura de forma incremental la columna `conversations.response_mode` para bases existentes, con valor por defecto `TEXT`.
-
-## Variables de entorno importantes
+Variables:
 
 ```env
-# DB
-DATABASE_URL=
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=credibot
-DB_USER=postgres
-DB_PASSWORD=12345678
-
-# IA
-GROQ_API_KEY=
-AI_ONLY_MODE=false
-
-# Audio STT
-AUDIO_STT_ENABLED=true
-AUDIO_STT_PROVIDER=groq
-AUDIO_STT_MODEL=base
-AUDIO_STT_LANGUAGE=es
-AUDIO_STT_DEVICE=cpu
-AUDIO_STT_COMPUTE_TYPE=int8
-AUDIO_STT_GROQ_MODEL=whisper-large-v3-turbo
-AUDIO_STT_REQUEST_TIMEOUT_SECONDS=20
-
-# Audio reply
-AUDIO_REPLY_ENABLED=true
-AUDIO_REPLY_LANGUAGE=es
-AUDIO_REPLY_PUBLIC_BASE_URL=
-
-# Conversation sessions
 CONVERSATION_SESSION_TIMEOUT_MINUTES=60
 CONVERSATION_CLEANUP_BATCH_SIZE=100
 ABANDONED_CONVERSATION_RETENTION_DAYS=7
+```
 
-# Twilio
+Comportamiento:
+
+- Se reutiliza conversacion abierta si no expiro.
+- Si expiro, se cierra como `EXPIRADO` y se crea una nueva.
+- La limpieza inicial corre en startup.
+- Hay endpoint manual para limpiar expiradas.
+- Se purgan conversaciones cerradas por abandono despues del periodo definido.
+
+## Variables principales
+
+Backend:
+
+```env
+DATABASE_URL=
+SUPABASE_DATABASE_URL=
+GROQ_API_KEY=
+AI_ONLY_MODE=false
+BACKEND_CORS_ORIGINS=https://d30z3dsmpm7ctx.cloudfront.net
+
 TWILIO_ENABLED=true
 TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 TWILIO_WHATSAPP_NUMBER=+14155238886
-TWILIO_WEBHOOK_URL=https://.../webhook/whatsapp
+TWILIO_WEBHOOK_URL=https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp
+
+AUDIO_STT_ENABLED=true
+AUDIO_STT_PROVIDER=groq
+AUDIO_REPLY_ENABLED=true
+AUDIO_REPLY_LANGUAGE=es
+AUDIO_REPLY_PUBLIC_BASE_URL=https://d30z3dsmpm7ctx.cloudfront.net
 ```
 
-## Endpoints
+Frontend:
 
-### App
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_WS_BASE_URL=ws://127.0.0.1:8000
+```
 
-- `GET /`
-- `GET /health`
+## CI/CD
 
-### WhatsApp
+Workflows:
 
-- `POST /webhook/whatsapp`
-- `GET /webhook/audio/{filename}`
+- `ci-backend.yml`: instala dependencias, compila Python y corre pruebas.
+- `ci-frontend.yml`: `npm ci`, lint y build.
+- `cd-backend-aws.yml`: build/push Docker en ECR, registra task definition y
+  actualiza ECS.
+- `cd-frontend-aws.yml`: build frontend, sync a S3 e invalidacion CloudFront.
 
-### Dashboard
+El CD backend reutiliza la task definition activa, cambia imagen y asegura las
+variables no secretas de respuesta por voz.
 
-- `GET /api/dashboard/stats`
-- `GET /api/dashboard/conversations`
-- `GET /api/dashboard/conversations/{id}/messages`
-- `POST /api/dashboard/conversations/{id}/take`
-- `POST /api/dashboard/conversations/{id}/reply`
-- `POST /api/dashboard/conversations/{id}/close`
-- `POST /api/dashboard/conversations/cleanup-expired`
+## Validacion actual
 
-### WebSocket
+Validado el 2026-07-13:
 
-- `GET ws://<host>/ws/dashboard`
+- Supabase migrado.
+- Backend local: 49 pruebas.
+- Frontend local: lint y build correctos.
+- CI/CD backend y frontend correctos.
+- CloudFront responde API.
+- Webhook responde texto.
+- `responde en audio` devuelve `<Media>` con `audio/ogg`.
+- Flujo con cedula `9990000003` autocompleta nombre y termina `OBSERVADO`.
 
-## Validacion realizada
+## Pendientes
 
-- Backend conecta con PostgreSQL.
-- `init_db()` ejecuta correctamente.
-- `init_db()` asegura `conversations.response_mode` en bases ya creadas.
-- Endpoint de conversaciones responde `200`.
-- Frontend compila con `npm run build`.
-- Pruebas backend pasan: `48 passed`.
-- Flujo de audio esta cubierto por pruebas.
-- Preferencia texto/audio por conversacion esta cubierta por pruebas.
-- Dashboard filtra conversaciones cerradas vacias y abandonadas.
-- Maquina de estados con transiciones validadas.
-- FAQ/RAG esta cubierto por pruebas unitarias de carga y busqueda.
-- Sesiones de conversacion estan cubiertas por pruebas de restauracion, expiracion y limpieza.
-- Frontend de administracion de FAQs compila con `npm run build`.
-
-## Brechas pendientes
-
-- Completar credenciales reales de Twilio y Groq.
-- Configurar `TWILIO_WEBHOOK_URL` con ngrok o dominio publico.
-- Cargar automaticamente los modulos de tools y corregir el ciclo completo de tool calling.
-- Alinear el guardado de mensajes del asesor con el resultado real de Twilio.
-- Deduplicar conversaciones por cliente en dashboard si ese sigue siendo el comportamiento esperado.
-- Validar firma de webhook de Twilio.
-- Autenticacion y autorizacion del dashboard.
-- Rate limiting y endurecimiento de seguridad.
-- Despliegue productivo y observabilidad.
-
-## Notas para nuevos colaboradores
-
-- Para agregar una tool: crear funcion con decorador `@tool()` en `backend/app/services/tools/` y asegurar que se importe en el startup de la app o en `AIOrchestrator`.
-- Las tools que requieren DB deben tener `requires_db=True` y recibir `db` como parametro. El `ToolExecutor` inyecta la sesion automaticamente.
-- La maquina de estados valida transiciones en runtime. Si una transicion no es valida, el sistema lanza `ValueError`. Revisar `transitions.py` para ver las reglas.
-- Los tests se ejecutan con `pytest backend/tests/ -v` desde la carpeta `backend/`.
+- Dominio propio y certificado ACM.
+- Validacion de firma Twilio.
+- Autenticacion y roles del dashboard.
+- Rate limiting.
+- Alarmas CloudWatch.
+- Separacion staging/prod.
+- Rotacion periodica de secretos.
+- Estado de envio para mensajes de asesor.
+- Deduplicacion o agrupacion por cliente en dashboard.

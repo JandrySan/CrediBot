@@ -1,72 +1,145 @@
-# Diagnostico ECS, OIDC y Supabase
+# Diagnostico ECS, CloudFront y Supabase
 
-Estado observado el 2026-07-13:
+Actualizado: 2026-07-13
 
-- CI backend y frontend pasan en GitHub Actions.
-- GitHub Actions tiene configuradas las variables `AWS_REGION`, `AWS_ECR_REPOSITORY`, `AWS_ECS_CLUSTER`, `AWS_ECS_SERVICE`, `AWS_ECS_CONTAINER_NAME`.
-- GitHub Actions tiene configurado el secret `AWS_ROLE_ARN`.
-- El CD falla antes de desplegar con:
+Este documento sirve como runbook cuando algo falla en produccion.
+
+## Estado base esperado
+
+- GitHub Actions usa OIDC correctamente.
+- Backend CI pasa.
+- Frontend CI pasa.
+- Backend CD publica imagen en ECR y actualiza ECS.
+- Frontend CD publica en S3 e invalida CloudFront.
+- ECS service queda estable.
+- Supabase responde consultas del schema `credit_bureau`.
+- CloudFront enruta `/api/*`, `/ws/*` y `/webhook/*` al backend.
+- Twilio apunta a `https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp`.
+
+## 1. Verificar GitHub Actions
+
+```powershell
+gh run list --repo JandrySan/CrediBot --limit 10
+```
+
+Ver detalle:
+
+```powershell
+gh run view <RUN_ID> --repo JandrySan/CrediBot --verbose
+```
+
+Si un job falla, revisar logs:
+
+```powershell
+gh run view <RUN_ID> --repo JandrySan/CrediBot --log-failed
+```
+
+## 2. Verificar CloudFront/API
+
+Stats del dashboard:
+
+```powershell
+Invoke-RestMethod https://d30z3dsmpm7ctx.cloudfront.net/api/dashboard/stats
+```
+
+Webhook de prueba:
+
+```powershell
+curl.exe -sS -X POST "https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp" `
+  -H "Content-Type: application/x-www-form-urlencoded" `
+  --data-urlencode "From=whatsapp:+593999880001" `
+  --data-urlencode "Body=hola" `
+  --data-urlencode "MessageType=text" `
+  --data-urlencode "NumMedia=0"
+```
+
+Debe responder XML de Twilio (`<Response>...</Response>`).
+
+## 3. Verificar audio saliente
+
+```powershell
+curl.exe -sS -X POST "https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp" `
+  -H "Content-Type: application/x-www-form-urlencoded" `
+  --data-urlencode "From=whatsapp:+593999880002" `
+  --data-urlencode "Body=responde en audio" `
+  --data-urlencode "MessageType=text" `
+  --data-urlencode "NumMedia=0"
+```
+
+Debe devolver:
+
+```xml
+<Media>https://d30z3dsmpm7ctx.cloudfront.net/webhook/audio/....ogg</Media>
+```
+
+Validar descarga del audio:
+
+```powershell
+curl.exe -sS -L -r 0-63 -o NUL -w "%{http_code} %{content_type} %{size_download}\n" "https://d30z3dsmpm7ctx.cloudfront.net/webhook/audio/<archivo>.ogg"
+```
+
+Resultado esperado:
 
 ```text
-Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
+206 audio/ogg 64
 ```
 
-Esto significa que el problema actual del CD esta en AWS IAM/OIDC, no todavia en ECR/ECS.
+## 4. Verificar flujo por cedula
 
-## 1. Corregir trust policy del rol OIDC
+Enviar mensajes secuenciales con un numero de prueba nuevo:
 
-Ejecutar en AWS CloudShell con una identidad que pueda administrar IAM:
+```powershell
+$url='https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp'
+$from='whatsapp:+593999880003'
+$messages=@('quiero solicitar un credito','9990000003','1200','12 meses','900')
 
-```bash
-cat > /tmp/credibot-github-actions-trust.json <<'JSON'
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Federated": "arn:aws:iam::514090178790:oidc-provider/token.actions.githubusercontent.com"
-      },
-      "Action": "sts:AssumeRoleWithWebIdentity",
-      "Condition": {
-        "StringEquals": {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-        },
-        "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:JandrySan/CrediBot:ref:refs/heads/main"
-        }
-      }
-    }
-  ]
+foreach ($message in $messages) {
+  curl.exe -sS -X POST $url `
+    -H "Content-Type: application/x-www-form-urlencoded" `
+    --data-urlencode "From=$from" `
+    --data-urlencode "Body=$message" `
+    --data-urlencode "MessageType=text" `
+    --data-urlencode "NumMedia=0"
 }
-JSON
-
-aws iam update-assume-role-policy \
-  --role-name github-actions-credibot-deploy \
-  --policy-document file:///tmp/credibot-github-actions-trust.json
 ```
 
-Verificar que quedo aplicado:
+Resultado esperado:
 
-```bash
-aws iam get-role \
-  --role-name github-actions-credibot-deploy \
-  --query 'Role.AssumeRolePolicyDocument' \
-  --output json
+- Primero pide cedula.
+- Con `9990000003` autocompleta `Maria Torres Cedeno`.
+- Pide monto, plazo e ingreso.
+- Termina con resultado `OBSERVADO`.
+
+## 5. Verificar Supabase
+
+Perfil individual:
+
+```powershell
+npx supabase db query --linked "SELECT national_id, full_name, central_risk_status, credit_score, risk_level, total_outstanding_debt, max_days_past_due, missed_payments, preliminary_history_result FROM credit_bureau.find_profile('9990000003');"
 ```
 
-Si el OIDC provider no existe, crearlo una sola vez:
+Resultado esperado:
 
-```bash
-aws iam create-open-id-connect-provider \
-  --url https://token.actions.githubusercontent.com \
-  --client-id-list sts.amazonaws.com \
-  --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+```text
+national_id: 9990000003
+full_name: Maria Torres Cedeno
+credit_score: 485
+risk_level: HIGH
+total_outstanding_debt: 2100
+max_days_past_due: 90
+missed_payments: 3
+preliminary_history_result: OBSERVADO
 ```
 
-Si ya existe, AWS devolvera error de duplicado y se puede ignorar.
+Vista general:
 
-## 2. Verificar task definition activa del servicio
+```powershell
+npx supabase db query --linked "SELECT national_id, full_name, credit_score, risk_level, preliminary_history_result FROM credit_bureau.credit_profile_summary ORDER BY national_id LIMIT 20;"
+```
+
+## 6. Verificar ECS
+
+Task definition activa:
 
 ```bash
 SERVICE_JSON=$(aws ecs describe-services \
@@ -76,61 +149,29 @@ SERVICE_JSON=$(aws ecs describe-services \
 
 TASK_DEF_ARN=$(echo "$SERVICE_JSON" | jq -r '.services[0].taskDefinition')
 echo "$TASK_DEF_ARN"
+```
 
+Variables y secrets del contenedor:
+
+```bash
 aws ecs describe-task-definition \
   --task-definition "$TASK_DEF_ARN" \
   --region us-east-1 \
-  --query 'taskDefinition.containerDefinitions[?name==`backend`].[name,environment,secrets]' \
+  --query 'taskDefinition.containerDefinitions[0].[name,environment,secrets]' \
   --output json
 ```
 
-La salida debe incluir `DATABASE_URL` o `SUPABASE_DATABASE_URL` en `secrets` o `environment`.
+Debe incluir:
 
-## 3. Verificar valor del secret sin imprimirlo completo
+- `DATABASE_URL` o `SUPABASE_DATABASE_URL`.
+- `GROQ_API_KEY`.
+- `TWILIO_*`.
+- `AUDIO_REPLY_ENABLED=true`.
+- `AUDIO_REPLY_PUBLIC_BASE_URL=https://d30z3dsmpm7ctx.cloudfront.net`.
 
-Si se usa Secrets Manager:
+## 7. Ver eventos y logs ECS
 
-```bash
-aws secretsmanager get-secret-value \
-  --secret-id credibot/database-url \
-  --region us-east-1 \
-  --query 'SecretString' \
-  --output text | sed -E 's#(postgresql[^:]*://[^:]+:).+(@[^/]+/).*#\1***\2***#'
-```
-
-Debe verse el host de Supabase, por ejemplo:
-
-```text
-...@db.subcovtwgoqbitvzoyzy.supabase.co/...
-```
-
-Si se ve `localhost`, el secret esta mal y hay que actualizarlo.
-
-## 4. Probar conexion a Supabase desde CloudShell
-
-CloudShell suele tener `psql`. Si no existe, usar el query editor o instalar cliente PostgreSQL temporalmente.
-
-```bash
-DATABASE_URL="$(aws secretsmanager get-secret-value \
-  --secret-id credibot/database-url \
-  --region us-east-1 \
-  --query 'SecretString' \
-  --output text)"
-
-psql "$DATABASE_URL" -c "select current_database(), current_user, now();"
-```
-
-Si Supabase exige SSL y la URL no lo trae, probar con:
-
-```bash
-psql "${DATABASE_URL}?sslmode=require" -c "select now();"
-```
-
-Para ECS, guardar la URL final con `sslmode=require` si Supabase lo requiere.
-
-## 5. Revisar eventos y logs recientes de ECS
-
-Eventos del servicio:
+Eventos:
 
 ```bash
 aws ecs describe-services \
@@ -172,18 +213,9 @@ aws ecs describe-tasks \
   --output table
 ```
 
-Logs recientes:
+Logs:
 
 ```bash
-aws logs describe-log-streams \
-  --log-group-name /ecs/credibot-backend \
-  --order-by LastEventTime \
-  --descending \
-  --max-items 1 \
-  --region us-east-1 \
-  --query 'logStreams[0].logStreamName' \
-  --output text
-
 STREAM_NAME="$(aws logs describe-log-streams \
   --log-group-name /ecs/credibot-backend \
   --order-by LastEventTime \
@@ -196,13 +228,66 @@ STREAM_NAME="$(aws logs describe-log-streams \
 aws logs get-log-events \
   --log-group-name /ecs/credibot-backend \
   --log-stream-name "$STREAM_NAME" \
-  --limit 80 \
+  --limit 100 \
   --region us-east-1 \
   --query 'events[*].message' \
   --output text
 ```
 
-## 6. Forzar nuevo despliegue despues de corregir secrets
+## 8. Problemas comunes
+
+### ECS arranca pero falla con localhost PostgreSQL
+
+Causa: `DATABASE_URL` no esta llegando o apunta a `localhost`.
+
+Validar secret sin imprimirlo completo:
+
+```bash
+aws secretsmanager get-secret-value \
+  --secret-id credibot/database-url \
+  --region us-east-1 \
+  --query 'SecretString' \
+  --output text | sed -E 's#(postgresql[^:]*://[^:]+:).+(@[^/]+/).*#\1***\2***#'
+```
+
+### Audio vuelve como texto
+
+Validar:
+
+- `AUDIO_REPLY_ENABLED=true`
+- `AUDIO_REPLY_PUBLIC_BASE_URL=https://d30z3dsmpm7ctx.cloudfront.net`
+- CloudFront enruta `/webhook/*`.
+- El endpoint `GET /webhook/audio/{filename}` responde `audio/ogg`.
+
+### Resultado OBSERVADO rompe al guardar
+
+Ya se corrigio convirtiendo `credit_applications.reason` a `TEXT`.
+
+Si vuelve a pasar, validar que la task nueva haya arrancado y que `init_db()` se
+ejecuto contra PostgreSQL.
+
+### OIDC falla en GitHub Actions
+
+Error tipico:
+
+```text
+Could not assume role with OIDC
+```
+
+Validar trust policy del rol `github-actions-credibot-deploy`:
+
+```json
+{
+  "StringEquals": {
+    "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+  },
+  "StringLike": {
+    "token.actions.githubusercontent.com:sub": "repo:JandrySan/CrediBot:ref:refs/heads/main"
+  }
+}
+```
+
+## 9. Forzar nuevo despliegue ECS
 
 ```bash
 aws ecs update-service \
@@ -217,12 +302,14 @@ aws ecs wait services-stable \
   --region us-east-1
 ```
 
-Luego probar:
+## 10. Reejecutar despliegue desde GitHub
 
-```bash
-curl -i http://credibot-alb-445521082.us-east-1.elb.amazonaws.com/health
+```powershell
+gh workflow run "Despliegue backend AWS" --repo JandrySan/CrediBot --ref main
 ```
 
-## 7. Reintentar CD desde GitHub
+Ver progreso:
 
-Cuando el trust policy permita OIDC, reejecutar el workflow `Despliegue backend AWS` desde GitHub Actions o hacer un nuevo push a `main`.
+```powershell
+gh run list --repo JandrySan/CrediBot --limit 5
+```

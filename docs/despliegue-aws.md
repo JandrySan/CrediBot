@@ -1,311 +1,339 @@
 # Despliegue AWS y CI/CD
 
-Este proyecto no tiene app movil. El flujo productivo cubierto aqui es:
+Actualizado: 2026-07-13
+
+Este proyecto no tiene app movil. El despliegue productivo actual cubre:
 
 ```text
-Dashboard web React -> Backend FastAPI -> PostgreSQL/Supabase o RDS
-WhatsApp/Twilio -> Backend FastAPI -> Groq/Twilio/PostgreSQL
-GitHub Actions -> OIDC AWS -> ECR -> ECS Fargate
+React dashboard -> S3 + CloudFront
+WhatsApp/Twilio -> CloudFront /webhook/* -> ALB -> ECS FastAPI
+Dashboard /api/* -> CloudFront -> ALB -> ECS FastAPI
+Backend -> Supabase PostgreSQL
+Backend -> Groq + Twilio + Secrets Manager
+GitHub Actions -> OIDC AWS -> ECR/ECS/S3/CloudFront
 ```
 
-## Que se implemento
+## Estado actual
 
-- `backend/Dockerfile` para ejecutar FastAPI en contenedor.
-- Healthcheck Docker contra `GET /health`.
-- CI de backend en GitHub Actions con instalacion, verificacion de sintaxis y pruebas.
-- CI de frontend con `npm ci`, lint y build.
-- CD de backend a AWS con OIDC, publicacion en ECR y actualizacion de ECS.
-- URL de API y WebSocket configurables en el frontend con variables Vite.
-- CORS configurable en el backend con `BACKEND_CORS_ORIGINS`.
+Recursos confirmados:
+
+| Recurso | Valor |
+| --- | --- |
+| Region | `us-east-1` |
+| Cuenta AWS | `514090178790` |
+| IAM role OIDC | `github-actions-credibot-deploy` |
+| ECR | `credibot-backend` |
+| ECS cluster | `credibot-cluster` |
+| ECS service | `credibot-backend-service` |
+| ALB | `credibot-alb-445521082.us-east-1.elb.amazonaws.com` |
+| Frontend S3 | `credibot-frontend-514090178790-us-east-1` |
+| CloudFront distribution | `E3IWLBA195SDM2` |
+| Frontend URL | `https://d30z3dsmpm7ctx.cloudfront.net` |
+| Supabase ref | `subcovtwgoqbitvzoyzy` |
+
+Rutas productivas:
+
+- Dashboard: `https://d30z3dsmpm7ctx.cloudfront.net`
+- API: `https://d30z3dsmpm7ctx.cloudfront.net/api/*`
+- WebSocket: `wss://d30z3dsmpm7ctx.cloudfront.net/ws/dashboard`
+- Webhook Twilio: `https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp`
+- Audio publico: `https://d30z3dsmpm7ctx.cloudfront.net/webhook/audio/{filename}`
+
+## Workflows
+
+### Backend CI
+
+Archivo:
+
+```text
+.github/workflows/ci-backend.yml
+```
+
+Ejecuta:
+
+- Instala dependencias Python.
+- Compila Python.
+- Corre pruebas con SQLite.
+
+### Frontend CI
+
+Archivo:
+
+```text
+.github/workflows/ci-frontend.yml
+```
+
+Ejecuta:
+
+- `npm ci`
+- `npm run lint`
+- `npm run build`
+
+### Backend CD
+
+Archivo:
+
+```text
+.github/workflows/cd-backend-aws.yml
+```
+
+Ejecuta:
+
+1. Valida backend.
+2. Asume el rol AWS por OIDC.
+3. Hace login en ECR.
+4. Crea ECR si no existe.
+5. Construye imagen Docker desde `backend/Dockerfile`.
+6. Publica tags `latest` y `${github.sha}`.
+7. Lee la task definition activa del servicio ECS.
+8. Verifica que exista `DATABASE_URL` o `SUPABASE_DATABASE_URL`.
+9. Registra una nueva revision con la imagen nueva.
+10. Asegura variables no secretas de audio:
+    - `AUDIO_REPLY_ENABLED=true`
+    - `AUDIO_REPLY_LANGUAGE=es`
+    - `AUDIO_REPLY_PUBLIC_BASE_URL`
+11. Actualiza el servicio ECS.
+12. Espera estabilidad.
+
+### Frontend CD
+
+Archivo:
+
+```text
+.github/workflows/cd-frontend-aws.yml
+```
+
+Ejecuta:
+
+1. Valida frontend.
+2. Asume el rol AWS por OIDC.
+3. Construye el frontend.
+4. Sincroniza `dist/` al bucket S3.
+5. Invalida CloudFront.
 
 ## Variables de GitHub Actions
 
-Crear estas variables o secrets en GitHub:
+Variables/secrets requeridos:
 
 | Nombre | Tipo recomendado | Uso |
 | --- | --- | --- |
-| `AWS_REGION` | Variable | Region AWS, por ejemplo `us-east-1`. |
-| `AWS_ECR_REPOSITORY` | Variable | Nombre del repositorio ECR, por ejemplo `credibot-backend`. |
-| `AWS_ROLE_ARN` | Secret | ARN del rol IAM que GitHub Actions asume por OIDC. |
-| `AWS_ECS_CLUSTER` | Variable | Nombre del cluster ECS. |
-| `AWS_ECS_SERVICE` | Variable | Nombre del servicio ECS del backend. |
-| `AWS_ECS_CONTAINER_NAME` | Variable opcional | Nombre del contenedor si la task definition tiene mas de un contenedor. |
+| `AWS_REGION` | Variable | Region AWS. |
+| `AWS_ECR_REPOSITORY` | Variable | Repositorio ECR del backend. |
+| `AWS_ROLE_ARN` | Secret | Rol OIDC que asume GitHub Actions. |
+| `AWS_ECS_CLUSTER` | Variable | Cluster ECS. |
+| `AWS_ECS_SERVICE` | Variable | Servicio ECS. |
+| `AWS_ECS_CONTAINER_NAME` | Variable | Nombre del contenedor backend. |
+| `AWS_S3_FRONTEND_BUCKET` | Variable | Bucket del frontend. |
+| `AWS_CLOUDFRONT_DISTRIBUTION_ID` | Variable | Distribucion CloudFront. |
+| `FRONTEND_PUBLIC_URL` | Variable | URL publica del dashboard. |
+| `AUDIO_REPLY_PUBLIC_BASE_URL` | Variable opcional | Base publica para audios. Si falta, usa `FRONTEND_PUBLIC_URL`. |
 
-Secrets de aplicacion que deben llegar al backend desde ECS, no desde el codigo:
+## Secrets de aplicacion
 
-| Nombre | Uso |
+Los secretos de aplicacion deben estar en AWS Secrets Manager o SSM y llegar a
+ECS como `secrets`, no como variables planas.
+
+Secrets actuales esperados:
+
+| Secret | Variable en contenedor |
 | --- | --- |
-| `DATABASE_URL` o `SUPABASE_DATABASE_URL` | Conexion PostgreSQL productiva. |
-| `GROQ_API_KEY` | IA y STT con Groq. |
-| `TWILIO_ACCOUNT_SID` | Cuenta Twilio. |
-| `TWILIO_AUTH_TOKEN` | Token Twilio. |
-| `TWILIO_WHATSAPP_FROM` | Numero WhatsApp emisor, por ejemplo `whatsapp:+14155238886`. |
-| `TWILIO_WHATSAPP_NUMBER` | Numero base de Twilio si el proyecto lo requiere. |
-| `TWILIO_WEBHOOK_URL` | URL publica del webhook, por ejemplo `https://api.midominio.com/webhook/whatsapp`. |
-| `AUDIO_REPLY_PUBLIC_BASE_URL` | URL publica base si se habilitan notas de voz. |
+| `credibot/database-url` | `DATABASE_URL` |
+| `credibot/groq-api-key` | `GROQ_API_KEY` |
+| `credibot/twilio-account-sid` | `TWILIO_ACCOUNT_SID` |
+| `credibot/twilio-auth-token` | `TWILIO_AUTH_TOKEN` |
+| `credibot/twilio-webhook-url` | `TWILIO_WEBHOOK_URL` |
+| `credibot/twilio-whatsapp-from` | `TWILIO_WHATSAPP_FROM` |
+| `credibot/twilio-whatsapp-number` | `TWILIO_WHATSAPP_NUMBER` |
 
-## Rol IAM para GitHub Actions
-
-Usar OIDC de GitHub, no access keys estaticas. El trust relationship debe limitar el acceso al repositorio:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
-      },
-      "Action": "sts:AssumeRoleWithWebIdentity",
-      "Condition": {
-        "StringEquals": {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-        },
-        "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:JandrySan/CrediBot:ref:refs/heads/main"
-        }
-      }
-    }
-  ]
-}
-```
-
-Permisos minimos del rol:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ecr:GetAuthorizationToken"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:BatchGetImage",
-        "ecr:CompleteLayerUpload",
-        "ecr:CreateRepository",
-        "ecr:DescribeRepositories",
-        "ecr:InitiateLayerUpload",
-        "ecr:PutImage",
-        "ecr:UploadLayerPart"
-      ],
-      "Resource": "arn:aws:ecr:<AWS_REGION>:<ACCOUNT_ID>:repository/<AWS_ECR_REPOSITORY>"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ecs:DescribeClusters",
-        "ecs:DescribeServices",
-        "ecs:DescribeTaskDefinition",
-        "ecs:RegisterTaskDefinition",
-        "ecs:UpdateService"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "iam:PassRole"
-      ],
-      "Resource": [
-        "arn:aws:iam::<ACCOUNT_ID>:role/<ECS_TASK_ROLE>",
-        "arn:aws:iam::<ACCOUNT_ID>:role/<ECS_TASK_EXECUTION_ROLE>"
-      ]
-    }
-  ]
-}
-```
-
-## Recursos AWS esperados
-
-La opcion recomendada para este backend es ECS Fargate con Application Load Balancer:
-
-- ECR: repositorio de imagenes del backend.
-- ECS cluster: `desiredCount = 1` para demo.
-- ECS task definition: contenedor escuchando `PORT=8000`.
-- ECS service: asociado al target group del ALB.
-- Application Load Balancer publico.
-- Target group HTTP apuntando al puerto `8000` y health check `/health`.
-- CloudWatch Logs para la salida del contenedor.
-- Secrets Manager o SSM Parameter Store para secretos de aplicacion.
-- PostgreSQL productivo: Supabase si el equipo ya lo usa, o RDS PostgreSQL.
-
-No se deben usar bases dentro del contenedor ni SQLite para produccion porque los datos se perderian.
-
-## HTTPS
-
-Para produccion se recomienda:
-
-1. Crear certificado en ACM para el dominio final.
-2. Crear listener HTTPS `443` en el ALB.
-3. Redirigir HTTP `80` a HTTPS.
-4. Configurar `BACKEND_CORS_ORIGINS` con el dominio del dashboard web.
-5. Configurar Twilio con `https://<dominio>/webhook/whatsapp`.
-
-Sin dominio propio, el ALB entrega HTTP. Para HTTPS sin dominio de aplicacion se puede poner CloudFront delante, pero lo mas limpio a largo plazo es ACM + ALB + dominio.
-
-## Variables del backend en ECS
-
-Variables no secretas recomendadas:
+Variables no secretas recomendadas en ECS:
 
 ```env
 APP_NAME=CrediBot
 DEBUG=false
 AI_ONLY_MODE=false
 PORT=8000
-BACKEND_CORS_ORIGINS=https://dashboard.midominio.com
 TWILIO_ENABLED=true
+BACKEND_CORS_ORIGINS=https://d30z3dsmpm7ctx.cloudfront.net
 AUDIO_STT_ENABLED=true
 AUDIO_STT_PROVIDER=groq
-AUDIO_REPLY_ENABLED=false
+AUDIO_REPLY_ENABLED=true
+AUDIO_REPLY_LANGUAGE=es
+AUDIO_REPLY_PUBLIC_BASE_URL=https://d30z3dsmpm7ctx.cloudfront.net
 CONVERSATION_SESSION_TIMEOUT_MINUTES=60
 CONVERSATION_CLEANUP_BATCH_SIZE=100
+ABANDONED_CONVERSATION_RETENTION_DAYS=7
 ```
 
-Variables secretas desde Secrets Manager o SSM:
+## CloudFront
 
-```env
-DATABASE_URL=postgresql+psycopg2://...
-# Alternativa aceptada por la app:
-SUPABASE_DATABASE_URL=postgresql+psycopg2://...
-GROQ_API_KEY=...
-TWILIO_ACCOUNT_SID=...
-TWILIO_AUTH_TOKEN=...
-TWILIO_WHATSAPP_FROM=...
-TWILIO_WHATSAPP_NUMBER=...
-TWILIO_WEBHOOK_URL=https://api.midominio.com/webhook/whatsapp
-```
+La distribucion sirve frontend y backend bajo el mismo dominio.
 
-## Configuracion del frontend web
+Behaviors:
 
-Crear `frontend/.env` local desde `frontend/.env.example`:
+- `/api/*` -> ALB backend.
+- `/ws/*` -> ALB backend.
+- `/webhook/*` -> ALB backend.
+- `/*` -> S3 frontend.
 
-```env
-VITE_API_BASE_URL=http://127.0.0.1:8000
-VITE_WS_BASE_URL=ws://127.0.0.1:8000
-```
+Ventajas:
 
-Para un build productivo:
+- No hay contenido mixto.
+- El frontend puede usar rutas relativas.
+- Twilio puede usar HTTPS aunque el ALB interno siga como HTTP.
+- Los audios generados quedan disponibles por HTTPS para Twilio.
 
-```env
-VITE_API_BASE_URL=https://api.midominio.com
-VITE_WS_BASE_URL=wss://api.midominio.com
-```
+## Supabase
 
-Si `VITE_WS_BASE_URL` no se configura, el frontend lo deriva desde `VITE_API_BASE_URL`.
+Supabase es la base PostgreSQL productiva.
 
-## Despliegue del frontend en S3 + CloudFront
-
-El frontend puede publicarse como sitio estatico privado en S3 y servirse por CloudFront.
-La distribucion actual enruta:
-
-- `/` y assets estaticos al bucket S3 del frontend.
-- `/api/*` al ALB del backend.
-- `/ws/*` al ALB del backend para WebSocket del dashboard.
-- `/webhook/*` al ALB del backend para WhatsApp/Twilio y audios publicos.
-
-Variables requeridas en GitHub Actions:
+La URL de conexion debe usar PostgreSQL compatible con SQLAlchemy, por ejemplo:
 
 ```text
-AWS_S3_FRONTEND_BUCKET=credibot-frontend-514090178790-us-east-1
-AWS_CLOUDFRONT_DISTRIBUTION_ID=E3IWLBA195SDM2
-FRONTEND_PUBLIC_URL=https://d30z3dsmpm7ctx.cloudfront.net
+postgresql+psycopg2://...
 ```
 
-El build de produccion usa el mismo origen del navegador como base de API cuando
-`VITE_API_BASE_URL` no esta definido. Esto evita contenido mixto porque el frontend
-y las llamadas `/api/*` salen por HTTPS desde CloudFront.
+Si Supabase requiere SSL, incluir:
 
-Webhook de Twilio sin dominio propio:
+```text
+?sslmode=require
+```
+
+La central simulada esta en el schema `credit_bureau`.
+
+Aplicar migraciones:
+
+```powershell
+npx supabase db push --linked --yes
+```
+
+Validar perfil:
+
+```powershell
+npx supabase db query --linked "SELECT national_id, full_name, credit_score, risk_level, total_outstanding_debt, max_days_past_due, preliminary_history_result FROM credit_bureau.find_profile('9990000003');"
+```
+
+## Twilio
+
+Webhook actual:
 
 ```text
 https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp
 ```
 
-Secretos de aplicacion requeridos en ECS/Secrets Manager para operacion completa:
+Numero sandbox:
 
 ```text
-GROQ_API_KEY
-TWILIO_ACCOUNT_SID
-TWILIO_AUTH_TOKEN
-TWILIO_WHATSAPP_FROM
-TWILIO_WHATSAPP_NUMBER
+whatsapp:+14155238886
 ```
 
-`TWILIO_WEBHOOK_URL` y `AUDIO_REPLY_PUBLIC_BASE_URL` apuntan a CloudFront mientras no haya dominio propio.
+Para probar:
 
-## Como se despliega
+1. Unirse al sandbox desde WhatsApp si Twilio lo solicita.
+2. Enviar `quiero solicitar un credito`.
+3. Usar una cedula ficticia, por ejemplo `9990000003`.
+4. Completar monto, plazo e ingreso.
+5. Probar audio con `responde en audio`.
 
-1. Hacer merge a `main`.
-2. GitHub Actions ejecuta `Validacion backend`.
-3. Si pasa, el workflow `Despliegue backend AWS`:
-   - valida variables requeridas;
-   - asume el rol AWS por OIDC;
-   - crea el repositorio ECR si no existe;
-   - construye y publica la imagen Docker;
-   - lee la task definition activa del servicio ECS;
-   - registra una revision con la nueva imagen;
-   - actualiza el servicio y espera estabilidad.
+## Pruebas rapidas de produccion
 
-## Como probar
-
-Backend local:
+Dashboard:
 
 ```powershell
-cd backend
-python -m pip install -r requirements.txt
-$env:DATABASE_URL="sqlite:///./credibot_dev.db"
-$env:DEBUG="false"
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+Invoke-RestMethod https://d30z3dsmpm7ctx.cloudfront.net/api/dashboard/stats
 ```
 
-Health local:
+Webhook texto:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
+curl.exe -sS -X POST "https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp" `
+  -H "Content-Type: application/x-www-form-urlencoded" `
+  --data-urlencode "From=whatsapp:+593999881999" `
+  --data-urlencode "Body=hola" `
+  --data-urlencode "MessageType=text" `
+  --data-urlencode "NumMedia=0"
 ```
 
-Docker local:
+Webhook audio saliente:
 
 ```powershell
-docker build -t credibot-backend ./backend
-docker run --rm -p 8000:8000 -e DATABASE_URL="sqlite:///./credibot_dev.db" credibot-backend
+curl.exe -sS -X POST "https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp" `
+  -H "Content-Type: application/x-www-form-urlencoded" `
+  --data-urlencode "From=whatsapp:+593999881999" `
+  --data-urlencode "Body=responde en audio" `
+  --data-urlencode "MessageType=text" `
+  --data-urlencode "NumMedia=0"
 ```
 
-Produccion:
+La respuesta debe incluir:
 
-```text
-https://api.midominio.com/health
+```xml
+<Media>https://d30z3dsmpm7ctx.cloudfront.net/webhook/audio/archivo.ogg</Media>
 ```
 
-## Estado actual de AWS
+## Diagnostico ECS
 
-En esta maquina existe AWS CLI, pero no hay credenciales configuradas. Por eso no se crearon recursos ni se pudo verificar un ALB/ECS real desde esta sesion.
+Ver servicio:
 
-Pendiente para el equipo:
+```bash
+aws ecs describe-services \
+  --cluster credibot-cluster \
+  --services credibot-backend-service \
+  --region us-east-1
+```
 
-- Configurar credenciales temporales o usar una cuenta de setup para crear recursos iniciales.
-- Crear ECS/ALB/Secrets Manager/RDS o Supabase.
-- Crear el rol OIDC y guardar `AWS_ROLE_ARN` en GitHub.
-- Configurar las variables de GitHub listadas arriba.
-- Ejecutar el workflow desde `main`.
-- Configurar dominio y certificado ACM.
-- Actualizar Twilio con el webhook HTTPS final.
+Eventos recientes:
+
+```bash
+aws ecs describe-services \
+  --cluster credibot-cluster \
+  --services credibot-backend-service \
+  --region us-east-1 \
+  --query 'services[0].events[0:10].[createdAt,message]' \
+  --output table
+```
+
+Logs recientes:
+
+```bash
+STREAM_NAME="$(aws logs describe-log-streams \
+  --log-group-name /ecs/credibot-backend \
+  --order-by LastEventTime \
+  --descending \
+  --max-items 1 \
+  --region us-east-1 \
+  --query 'logStreams[0].logStreamName' \
+  --output text)"
+
+aws logs get-log-events \
+  --log-group-name /ecs/credibot-backend \
+  --log-stream-name "$STREAM_NAME" \
+  --limit 100 \
+  --region us-east-1 \
+  --query 'events[*].message' \
+  --output text
+```
+
+## Dominio propio
+
+Pendiente por decision del proyecto.
+
+Cuando se configure:
+
+1. Crear certificado ACM en `us-east-1` si se usa CloudFront.
+2. Agregar alias al distribution de CloudFront.
+3. Apuntar DNS al distribution.
+4. Actualizar `FRONTEND_PUBLIC_URL`.
+5. Actualizar `AUDIO_REPLY_PUBLIC_BASE_URL`.
+6. Actualizar `TWILIO_WEBHOOK_URL`.
+7. Actualizar CORS.
 
 ## Pendientes de produccion real
 
-- Dominio propio y HTTPS en ALB.
-- Separar ambientes staging/prod.
-- Backups y monitoreo de PostgreSQL.
-- Logs y alarmas CloudWatch.
-- Rotacion de secretos.
-- Autenticacion y roles para el dashboard.
-- Validacion de firma de webhooks Twilio.
-- Rate limiting y politicas de seguridad.
+- Dominio propio.
+- Validacion de firma Twilio.
+- Autenticacion y roles en dashboard.
+- Rate limiting.
+- Alarmas CloudWatch.
+- Backups y politica de retencion.
+- Separar staging/prod.
+- Rotacion periodica de secretos.

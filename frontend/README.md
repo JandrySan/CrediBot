@@ -1,75 +1,87 @@
-# React + TypeScript + Vite
+# CrediBot Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Dashboard web para asesores de CrediBot.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React
+- TypeScript
+- Vite
+- Material UI
+- React Query
+- WebSocket nativo para eventos en tiempo real
 
-## React Compiler
+## Rutas
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `/`: panel de conversaciones.
+- `/faqs`: administracion de FAQs.
 
-## Expanding the ESLint configuration
+## Variables
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+Archivo local:
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```text
+frontend/.env
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Ejemplo:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_WS_BASE_URL=ws://127.0.0.1:8000
 ```
+
+Si `VITE_WS_BASE_URL` se omite, se deriva desde `VITE_API_BASE_URL`.
+
+En produccion, el build puede quedar sin `VITE_API_BASE_URL`; en ese caso usa
+el mismo origen del navegador. Actualmente CloudFront enruta:
+
+- `/api/*` al backend.
+- `/ws/*` al backend.
+- `/webhook/*` al backend.
+- El resto al sitio estatico en S3.
+
+URL productiva actual:
+
+```text
+https://d30z3dsmpm7ctx.cloudfront.net
+```
+
+## Comandos
+
+Instalar dependencias:
+
+```powershell
+npm install
+```
+
+Desarrollo local:
+
+```powershell
+npm run dev
+```
+
+Validar lint:
+
+```powershell
+npm run lint
+```
+
+Build productivo:
+
+```powershell
+npm run build
+```
+
+## Funcionalidades
+
+- Estadisticas generales.
+- Lista de conversaciones.
+- Panel con cedula, nombre, monto, plazo, ingreso y resultado.
+- Chat de conversacion.
+- Toma de conversacion por asesor.
+- Respuesta manual por WhatsApp.
+- Cierre de conversaciones.
+- Limpieza manual de conversaciones expiradas.
+- Administracion de FAQs.
+- Actualizacion en tiempo real por WebSocket.
