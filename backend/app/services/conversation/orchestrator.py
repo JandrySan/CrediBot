@@ -129,7 +129,11 @@ class ConversationOrchestrator:
             db=self.db,
         )
 
-        evaluation = self.credit_service.evaluate_if_complete(application)
+        evaluation = self.credit_service.evaluate_if_complete(
+            application,
+            customer=customer,
+            db=self.db,
+        )
 
         if evaluation:
             self.application_repo.update(

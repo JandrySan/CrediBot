@@ -2,6 +2,12 @@ from app.services.ai.intent_detector import IntentDetector
 from app.services.ai.entity_extractor import EntityExtractor
 from app.services.ai.response_generator import ResponseGenerator
 from app.services.ai.ai_gateway import AIGateway
+from app.services.tools import (
+    credit_bureau_tools,
+    customer_tools,
+    financial_tools,
+    policy_tools,
+)
 from app.services.tools.tool_registry import tool_registry
 from app.services.tools.tool_executor import ToolExecutor
 from app.services.rag.retrieval_service import RetrievalService
@@ -50,6 +56,8 @@ class AIOrchestrator:
             "tablas de pago, intereses, o cuanto pagaria al mes.\n"
             "- consultar_estado_cliente: cuando quiera saber el estado de su solicitud "
             "o historial de creditos.\n"
+            "- consultar_historial_crediticio: cuando el usuario entregue una cedula "
+            "o telefono y quiera revisar score, deuda, mora o resultado del historial crediticio.\n"
             "- obtener_reglas_credito: cuando pregunte por que fue aprobado o rechazado, "
             "o cuales son las reglas del credito.\n"
             "- consultar_politica: cuando pregunte sobre requisitos, documentos, "
