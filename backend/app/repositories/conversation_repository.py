@@ -4,11 +4,15 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config.settings import settings
+from app.models.ai_analysis import AIAnalysis
 from app.models.conversation import Conversation
+from app.models.conversation_state_history import ConversationStateHistory
+from app.models.message import Message
 from app.state_machine.states import ConversationState
 
 
 OPEN_CONVERSATION_STATUSES = ("ACTIVE", "HANDOFF")
+ABANDONED_CONVERSATION_RESULTS = ("EXPIRADO", "CANCELADA", "CANCELADO")
 
 
 class ConversationRepository:
@@ -119,6 +123,69 @@ class ConversationRepository:
 
         return len(conversations)
 
+    def purge_abandoned_closed_sessions(self, retention_days: int | None = None, limit: int | None = None) -> int:
+        retention = self._retention_days(retention_days)
+        if retention <= 0:
+            return 0
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention)
+        max_rows = limit or settings.CONVERSATION_CLEANUP_BATCH_SIZE
+
+        rows = (
+            self.db.query(Conversation.id)
+            .filter(
+                Conversation.status == "CLOSED",
+                Conversation.result.in_(ABANDONED_CONVERSATION_RESULTS),
+                func.coalesce(Conversation.updated_at, Conversation.created_at) <= cutoff,
+            )
+            .order_by(Conversation.id.asc())
+            .limit(max_rows)
+            .all()
+        )
+        conversation_ids = [row[0] for row in rows]
+
+        if not conversation_ids:
+            return 0
+
+        return self._delete_conversations(conversation_ids)
+
+    def purge_empty_closed_sessions(self, limit: int | None = None) -> int:
+        max_rows = limit or settings.CONVERSATION_CLEANUP_BATCH_SIZE
+
+        rows = (
+            self.db.query(Conversation.id)
+            .outerjoin(Message, Message.conversation_id == Conversation.id)
+            .filter(Conversation.status == "CLOSED")
+            .group_by(Conversation.id)
+            .having(func.count(Message.id) == 0)
+            .order_by(Conversation.id.asc())
+            .limit(max_rows)
+            .all()
+        )
+        conversation_ids = [row[0] for row in rows]
+
+        if not conversation_ids:
+            return 0
+
+        return self._delete_conversations(conversation_ids)
+
+    def _delete_conversations(self, conversation_ids: list[int]) -> int:
+        self.db.query(Message).filter(
+            Message.conversation_id.in_(conversation_ids)
+        ).delete(synchronize_session=False)
+        self.db.query(AIAnalysis).filter(
+            AIAnalysis.conversation_id.in_(conversation_ids)
+        ).delete(synchronize_session=False)
+        self.db.query(ConversationStateHistory).filter(
+            ConversationStateHistory.conversation_id.in_(conversation_ids)
+        ).delete(synchronize_session=False)
+        deleted_count = self.db.query(Conversation).filter(
+            Conversation.id.in_(conversation_ids)
+        ).delete(synchronize_session=False)
+
+        self.db.commit()
+        return deleted_count
+
     def touch(self, conversation: Conversation):
         conversation.updated_at = datetime.now(timezone.utc)
         self.db.commit()
@@ -130,6 +197,18 @@ class ConversationRepository:
             settings.CONVERSATION_SESSION_TIMEOUT_MINUTES
             if timeout_minutes is None
             else timeout_minutes
+        )
+
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def _retention_days(self, retention_days: int | None = None) -> int:
+        value = (
+            settings.ABANDONED_CONVERSATION_RETENTION_DAYS
+            if retention_days is None
+            else retention_days
         )
 
         try:

@@ -171,3 +171,23 @@ class ConversationManager:
             timeout_minutes=self.session_timeout_minutes,
             limit=settings.CONVERSATION_CLEANUP_BATCH_SIZE,
         )
+
+    def purge_abandoned_sessions(self) -> int:
+        empty_deleted = self.conversation_repo.purge_empty_closed_sessions(
+            limit=settings.CONVERSATION_CLEANUP_BATCH_SIZE,
+        )
+        abandoned_deleted = self.conversation_repo.purge_abandoned_closed_sessions(
+            retention_days=settings.ABANDONED_CONVERSATION_RETENTION_DAYS,
+            limit=settings.CONVERSATION_CLEANUP_BATCH_SIZE,
+        )
+
+        return empty_deleted + abandoned_deleted
+
+    def cleanup_sessions(self) -> dict:
+        closed_count = self.cleanup_expired_sessions()
+        deleted_count = self.purge_abandoned_sessions()
+
+        return {
+            "closed_count": closed_count,
+            "deleted_count": deleted_count,
+        }

@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     CONVERSATION_SESSION_TIMEOUT_MINUTES: int = 60
     CONVERSATION_CLEANUP_BATCH_SIZE: int = 100
+    ABANDONED_CONVERSATION_RETENTION_DAYS: int = 7
 
     model_config = SettingsConfigDict(
         env_file=".env",

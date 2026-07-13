@@ -396,6 +396,7 @@ Configuracion:
 ```env
 CONVERSATION_SESSION_TIMEOUT_MINUTES=60
 CONVERSATION_CLEANUP_BATCH_SIZE=100
+ABANDONED_CONVERSATION_RETENTION_DAYS=7
 ```
 
 Comportamiento:
@@ -404,13 +405,19 @@ Comportamiento:
 - Si la conversacion abierta expiro, `ConversationRepository.close_expired()` la marca como `CLOSED`, mueve `current_state` a `END`, asigna `result=EXPIRADO` si no tenia resultado y crea una nueva conversacion `ACTIVE`.
 - `ConversationRepository.restore_session(customer_id, timeout_minutes=None)` devuelve la sesion abierta si existe y no expiro; si expiro, la cierra y devuelve `None`.
 - `ConversationRepository.cleanup_expired_open_sessions()` cierra sesiones abiertas vencidas por lotes.
+- `ConversationRepository.purge_abandoned_closed_sessions()` elimina conversaciones cerradas por abandono (`result=EXPIRADO`, `CANCELADA` o `CANCELADO`) cuando superan `ABANDONED_CONVERSATION_RETENTION_DAYS`.
+- `ConversationRepository.purge_empty_closed_sessions()` elimina conversaciones `CLOSED` sin mensajes, porque no tienen historial util para el asesor.
+- La purga elimina tambien mensajes, analisis IA e historial de estados asociados a esas conversaciones.
+- No borra conversaciones cerradas por asesor, preaprobadas, observadas ni resueltas.
+- El dashboard oculta conversaciones cerradas vacias y abandonadas para evitar filas con chat vacio o resultados de solicitudes que no corresponden a esa conversacion.
 - `ConversationManager` expone `restore_session(phone_number)` y `cleanup_expired_sessions()`, usando `CONVERSATION_SESSION_TIMEOUT_MINUTES`.
+- `ConversationManager.cleanup_sessions()` combina cierre de sesiones abiertas vencidas y purga de conversaciones abandonadas antiguas.
 - `MessageRepository.save_message()` actualiza `conversations.updated_at` para que el timeout se base en actividad real.
 - El startup ejecuta una limpieza inicial despues de `init_db()`.
 
 Endpoint operativo:
 
-- `POST /api/dashboard/conversations/cleanup-expired`: cierra conversaciones abiertas expiradas y devuelve `closed_count`.
+- `POST /api/dashboard/conversations/cleanup-expired`: cierra conversaciones abiertas expiradas y purga conversaciones abandonadas antiguas. Devuelve `closed_count` y `deleted_count`.
 
 ## Respuesta de asesor humano
 
@@ -501,6 +508,7 @@ AUDIO_REPLY_PUBLIC_BASE_URL=
 # Conversation sessions
 CONVERSATION_SESSION_TIMEOUT_MINUTES=60
 CONVERSATION_CLEANUP_BATCH_SIZE=100
+ABANDONED_CONVERSATION_RETENTION_DAYS=7
 
 # Twilio
 TWILIO_ENABLED=true
@@ -544,9 +552,10 @@ TWILIO_WEBHOOK_URL=https://.../webhook/whatsapp
 - `init_db()` asegura `conversations.response_mode` en bases ya creadas.
 - Endpoint de conversaciones responde `200`.
 - Frontend compila con `npm run build`.
-- Pruebas backend pasan: `26 passed`.
+- Pruebas backend pasan: `34 passed`.
 - Flujo de audio esta cubierto por pruebas.
 - Preferencia texto/audio por conversacion esta cubierta por pruebas.
+- Dashboard filtra conversaciones cerradas vacias y abandonadas.
 - Maquina de estados con transiciones validadas.
 - FAQ/RAG esta cubierto por pruebas unitarias de carga y busqueda.
 - Sesiones de conversacion estan cubiertas por pruebas de restauracion, expiracion y limpieza.

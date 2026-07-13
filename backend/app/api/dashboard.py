@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_, not_
 
 from app.state_machine.states import ConversationState
 from app.database.session import get_db
@@ -8,6 +8,7 @@ from app.models.customer import Customer
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.credit_application import CreditApplication
+from app.repositories.conversation_repository import ABANDONED_CONVERSATION_RESULTS
 from app.services.rag.faq_loader import FAQLoader
 from app.services.rag.models import KnowledgeBase
 from app.services.conversation.conversation_manager import ConversationManager
@@ -32,18 +33,54 @@ def _serialize_faq(faq: KnowledgeBase) -> dict:
     }
 
 
+def _message_count_subquery(db: Session):
+    return (
+        db.query(
+            Message.conversation_id,
+            func.count(Message.id).label("message_count"),
+        )
+        .group_by(Message.conversation_id)
+        .subquery()
+    )
+
+
+def _visible_conversation_filter(message_count_expr):
+    return not_(
+        and_(
+            Conversation.status == "CLOSED",
+            or_(
+                Conversation.result.in_(ABANDONED_CONVERSATION_RESULTS),
+                message_count_expr == 0,
+            ),
+        )
+    )
+
+
 @router.get("/stats")
 def get_dashboard_stats(db: Session = Depends(get_db)):
+    message_count_subq = _message_count_subquery(db)
+    message_count = func.coalesce(message_count_subq.c.message_count, 0)
+    visible_filter = _visible_conversation_filter(message_count)
+
+    visible_conversations = (
+        db.query(Conversation)
+        .outerjoin(
+            message_count_subq,
+            message_count_subq.c.conversation_id == Conversation.id,
+        )
+        .filter(visible_filter)
+    )
+
     return {
         "customers": db.query(Customer).count(),
-        "conversations": db.query(Conversation).count(),
-        "active_conversations": db.query(Conversation).filter(
+        "conversations": visible_conversations.count(),
+        "active_conversations": visible_conversations.filter(
             Conversation.status == "ACTIVE"
         ).count(),
-        "handoff_conversations": db.query(Conversation).filter(
+        "handoff_conversations": visible_conversations.filter(
             Conversation.status == "HANDOFF"
         ).count(),
-        "closed_conversations": db.query(Conversation).filter(
+        "closed_conversations": visible_conversations.filter(
             Conversation.status == "CLOSED"
         ).count(),
         "preapproved": db.query(CreditApplication).filter(
@@ -57,6 +94,8 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 
 @router.get("/conversations")
 def get_conversations(db: Session = Depends(get_db)):
+    message_count_subq = _message_count_subquery(db)
+    message_count = func.coalesce(message_count_subq.c.message_count, 0)
     latest_app_subq = (
         db.query(
             CreditApplication.customer_id,
@@ -70,6 +109,10 @@ def get_conversations(db: Session = Depends(get_db)):
         db.query(Conversation, Customer, CreditApplication)
         .join(Customer, Conversation.customer_id == Customer.id)
         .outerjoin(
+            message_count_subq,
+            message_count_subq.c.conversation_id == Conversation.id,
+        )
+        .outerjoin(
             latest_app_subq,
             latest_app_subq.c.customer_id == Customer.id,
         )
@@ -77,6 +120,7 @@ def get_conversations(db: Session = Depends(get_db)):
             CreditApplication,
             CreditApplication.id == latest_app_subq.c.max_id,
         )
+        .filter(_visible_conversation_filter(message_count))
         .order_by(Conversation.id.desc())
         .all()
     )
@@ -127,11 +171,11 @@ def get_conversation_messages(
 
 @router.post("/conversations/cleanup-expired")
 def cleanup_expired_conversations(db: Session = Depends(get_db)):
-    closed_count = ConversationManager(db).cleanup_expired_sessions()
+    result = ConversationManager(db).cleanup_sessions()
 
     return {
         "success": True,
-        "closed_count": closed_count,
+        **result,
     }
 
 

@@ -29,7 +29,7 @@ def startup():
     init_db()
     db = SessionLocal()
     try:
-        ConversationManager(db).cleanup_expired_sessions()
+        ConversationManager(db).cleanup_sessions()
     finally:
         db.close()
 

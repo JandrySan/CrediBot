@@ -37,7 +37,8 @@ Componentes principales:
 13. Cierre manual de conversaciones en estado `HANDOFF`.
 14. Carga, listado, eliminacion logica y recuperacion de FAQs desde dashboard.
 15. Timeout configurable, restauracion y limpieza de sesiones de conversacion.
-16. Administracion frontend de FAQs y navegacion interna con React Router.
+16. Purga automatica de conversaciones abandonadas cerradas por expiracion.
+17. Administracion frontend de FAQs y navegacion interna con React Router.
 
 ## Flujo principal
 
@@ -234,6 +235,7 @@ Variables:
 ```env
 CONVERSATION_SESSION_TIMEOUT_MINUTES=60
 CONVERSATION_CLEANUP_BATCH_SIZE=100
+ABANDONED_CONVERSATION_RETENTION_DAYS=7
 ```
 
 Comportamiento:
@@ -242,6 +244,11 @@ Comportamiento:
 - Si la conversacion abierta expiro, se marca como `CLOSED`, pasa a estado `END`, guarda resultado `EXPIRADO` y se crea una nueva conversacion `ACTIVE`.
 - `ConversationRepository.restore_session()` devuelve una sesion abierta solo si existe y no expiro.
 - `ConversationManager.cleanup_expired_sessions()` cierra sesiones abiertas vencidas por lotes.
+- `ConversationManager.purge_abandoned_sessions()` elimina conversaciones cerradas por abandono despues de `ABANDONED_CONVERSATION_RETENTION_DAYS`.
+- Solo se purgan conversaciones cerradas con resultado `EXPIRADO`, `CANCELADA` o `CANCELADO`.
+- Tambien se purgan conversaciones `CLOSED` sin mensajes, porque no aportan historial util al asesor.
+- La purga elimina mensajes, analisis IA e historial de estados asociados; no borra cierres de asesor ni resultados utiles.
+- El dashboard no lista conversaciones cerradas vacias ni cerradas por abandono, aunque aun no hayan sido purgadas fisicamente.
 - El startup ejecuta una limpieza inicial.
 - `MessageRepository.save_message()` actualiza `conversations.updated_at` para reflejar actividad reciente.
 
@@ -301,6 +308,7 @@ AUDIO_REPLY_PUBLIC_BASE_URL=
 # Conversation sessions
 CONVERSATION_SESSION_TIMEOUT_MINUTES=60
 CONVERSATION_CLEANUP_BATCH_SIZE=100
+ABANDONED_CONVERSATION_RETENTION_DAYS=7
 
 # Twilio
 TWILIO_ENABLED=true
@@ -438,11 +446,13 @@ TWILIO_WEBHOOK_URL=https://<ngrok>/webhook/whatsapp
 - Backend conecta con PostgreSQL.
 - Inicializacion de tablas ejecutada.
 - Build frontend pasa con `npm run build`.
-- Pruebas backend pasan con `DEBUG=false` inyectado en el entorno: `23 passed`.
+- Pruebas backend pasan: `34 passed`.
 - Flujo de audio cubierto por pruebas.
 - Envio del asesor por Twilio validado a nivel de servicio.
 - FAQ/RAG cubierto por pruebas unitarias de carga y busqueda.
 - Sesiones de conversacion cubiertas por pruebas de restauracion, expiracion y limpieza.
+- Purga de conversaciones abandonadas cubierta por pruebas.
+- Dashboard filtra conversaciones cerradas vacias y abandonadas.
 - Frontend de FAQs compila con `npm run build`.
 
 Estado de pruebas backend:
