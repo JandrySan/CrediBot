@@ -125,7 +125,7 @@ class TwilioWhatsAppService:
                     "sid": message_sid,
                     "status": status,
                     "error_code": error_code,
-                    "message": error_message or "Twilio no pudo entregar el mensaje de WhatsApp.",
+                    "message": self._friendly_delivery_error(error_code, error_message),
                 }
 
             if status not in pending_statuses:
@@ -147,6 +147,17 @@ class TwilioWhatsAppService:
                 "Revisa que el cliente siga unido al Sandbox y los logs de Twilio."
             ),
         }
+
+    @staticmethod
+    def _friendly_delivery_error(error_code, error_message) -> str:
+        if error_code == 63015:
+            return (
+                "Twilio no pudo entregar el mensaje porque el numero destino no esta unido "
+                "al Sandbox de WhatsApp actual, se unio a otro sandbox o su union expiro. "
+                "El cliente debe enviar nuevamente el codigo join del Sandbox configurado."
+            )
+
+        return error_message or "Twilio no pudo entregar el mensaje de WhatsApp."
 
     def _get_from_number(self) -> str:
         return (

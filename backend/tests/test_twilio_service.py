@@ -89,6 +89,15 @@ class TwilioServiceTests(unittest.TestCase):
             self.assertEqual(result["status"], "undelivered")
             self.assertEqual(result["error_code"], 63016)
 
+    def test_send_message_explains_whatsapp_sandbox_join_error(self):
+        message = twilio_service.TwilioWhatsAppService._friendly_delivery_error(
+            63015,
+            "generic twilio message",
+        )
+
+        self.assertIn("Sandbox", message)
+        self.assertIn("join", message)
+
     def test_normalize_phone_number_accepts_existing_whatsapp_prefix_case_insensitive(self):
         normalized = twilio_service.TwilioWhatsAppService._normalize_phone_number(
             " WhatsApp:+593999999999 "
