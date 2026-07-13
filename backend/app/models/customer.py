@@ -10,6 +10,7 @@ class Customer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     phone_number = Column(String(30), unique=True, nullable=False, index=True)
+    national_id = Column(String(10), nullable=True, index=True)
     full_name = Column(String(120), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

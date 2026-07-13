@@ -4,6 +4,9 @@ from app.state_machine.transitions import STATE_TRANSITIONS
 
 class ConversationStateService:
     def get_next_required_field(self, customer, application) -> str | None:
+        if not getattr(customer, "national_id", None):
+            return "national_id"
+
         if not customer.full_name:
             return "full_name"
 
@@ -20,6 +23,7 @@ class ConversationStateService:
 
     def state_for_missing_field(self, field: str) -> str:
         mapping = {
+            "national_id": ConversationState.ASK_NATIONAL_ID.value,
             "full_name": ConversationState.ASK_NAME.value,
             "amount": ConversationState.ASK_AMOUNT.value,
             "term_months": ConversationState.ASK_TERM.value,

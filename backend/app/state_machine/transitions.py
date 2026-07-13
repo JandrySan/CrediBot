@@ -2,8 +2,18 @@ from app.state_machine.states import ConversationState
 
 STATE_TRANSITIONS: dict[ConversationState, list[ConversationState]] = {
     ConversationState.START: [
+        ConversationState.ASK_NATIONAL_ID,
         ConversationState.ASK_NAME,
         ConversationState.ASK_AMOUNT,
+        ConversationState.HANDOFF,
+        ConversationState.END,
+    ],
+    ConversationState.ASK_NATIONAL_ID: [
+        ConversationState.ASK_NAME,
+        ConversationState.ASK_AMOUNT,
+        ConversationState.ASK_TERM,
+        ConversationState.ASK_INCOME,
+        ConversationState.SHOW_RESULT,
         ConversationState.HANDOFF,
         ConversationState.END,
     ],

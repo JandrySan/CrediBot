@@ -18,6 +18,13 @@ class _ProfileService:
             "preliminary_history_result": "OBSERVADO",
         }
 
+    def find_first_available(self, *identifiers):
+        for identifier in identifiers:
+            if identifier:
+                return self.find_profile(identifier)
+
+        return None
+
 
 def test_evaluation_uses_observed_credit_bureau_profile(monkeypatch):
     import app.services.conversation.credit_application_service as service_module
@@ -25,7 +32,7 @@ def test_evaluation_uses_observed_credit_bureau_profile(monkeypatch):
     monkeypatch.setattr(service_module, "CreditBureauProfileService", _ProfileService)
 
     service = CreditApplicationService()
-    customer = SimpleNamespace(phone_number="+593990000003")
+    customer = SimpleNamespace(national_id="9990000003", phone_number="+593990000003")
     application = SimpleNamespace(
         amount=Decimal("1000"),
         term_months=12,

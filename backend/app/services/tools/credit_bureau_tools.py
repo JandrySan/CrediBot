@@ -10,8 +10,9 @@ from app.services.tools.tool_registry import tool
 @tool(
     name="consultar_historial_crediticio",
     description=(
-        "Consulta el historial crediticio simulado de una persona por cedula o telefono. "
-        "Devuelve score, riesgo, deuda, mora, pagos fallidos y resultado preliminar."
+        "Consulta la central de riesgo simulada de una persona por cedula o telefono. "
+        "Devuelve identidad, score, riesgo, deuda, mora, pagos fallidos, eventos negativos, "
+        "consultas recientes, capacidad estimada y resultado preliminar."
     ),
     parameters={
         "type": "object",

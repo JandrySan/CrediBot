@@ -14,6 +14,14 @@ class CreditApplicationService:
         self.rule_engine = CreditRuleEngine()
 
     def apply_extracted_data(self, customer, application, data: dict, db):
+        if data.get("national_id") and not getattr(customer, "national_id", None):
+            normalized_national_id = self._normalize_national_id(data["national_id"])
+            if len(normalized_national_id) == 10:
+                customer.national_id = normalized_national_id
+                profile = self._find_credit_bureau_profile(customer, db)
+                if profile and profile.get("full_name") and not customer.full_name:
+                    customer.full_name = profile["full_name"]
+
         full_name = (data.get("full_name") or "").strip()
         if full_name and not customer.full_name and self.is_valid_person_name(full_name):
             customer.full_name = full_name
@@ -100,15 +108,22 @@ class CreditApplicationService:
 
         history_result = (bureau_profile.get("preliminary_history_result") or "").upper()
         if history_result == "OBSERVADO":
+            reason_parts = [
+                f"estado central {bureau_profile.get('central_risk_status')}",
+                f"riesgo {bureau_profile.get('risk_level')}",
+                f"score {bureau_profile.get('credit_score')}",
+                f"deuda pendiente {bureau_profile.get('total_outstanding_debt')}",
+                f"mora maxima {bureau_profile.get('max_days_past_due')} dias",
+                f"{bureau_profile.get('missed_payments')} pagos incumplidos",
+            ]
+            if bureau_profile.get("central_risk_reason"):
+                reason_parts.append(str(bureau_profile.get("central_risk_reason")))
+
             evaluation = {
                 "result": "OBSERVADO",
                 "reason": (
-                    "El historial crediticio simulado registra riesgo "
-                    f"{bureau_profile.get('risk_level')}, score "
-                    f"{bureau_profile.get('credit_score')}, deuda pendiente "
-                    f"{bureau_profile.get('total_outstanding_debt')}, mora maxima "
-                    f"{bureau_profile.get('max_days_past_due')} dias y "
-                    f"{bureau_profile.get('missed_payments')} pagos incumplidos."
+                    "La central de riesgo simulada registra "
+                    f"{', '.join(reason_parts)}."
                 ),
                 "credit_bureau": bureau_profile,
             }
@@ -120,6 +135,12 @@ class CreditApplicationService:
             return None
 
         try:
-            return CreditBureauProfileService(db).find_profile(customer.phone_number)
+            return CreditBureauProfileService(db).find_first_available(
+                getattr(customer, "national_id", None),
+                customer.phone_number,
+            )
         except CreditBureauUnavailable:
             return None
+
+    def _normalize_national_id(self, value) -> str:
+        return "".join(ch for ch in str(value or "") if ch.isdigit())[:10]

@@ -6,6 +6,8 @@ export interface Conversation {
 
     phone_number: string;
 
+    national_id: string | null;
+
     full_name: string | null;
 
     state: string;

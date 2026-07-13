@@ -14,7 +14,23 @@ from app.models import (
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _ensure_customer_national_id()
     _ensure_conversation_response_mode()
+
+
+def _ensure_customer_national_id():
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("customers")}
+
+    with engine.begin() as connection:
+        if "national_id" not in columns:
+            connection.execute(
+                text("ALTER TABLE customers ADD COLUMN national_id VARCHAR(10)")
+            )
+
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_customers_national_id ON customers(national_id)")
+        )
 
 
 def _ensure_conversation_response_mode():

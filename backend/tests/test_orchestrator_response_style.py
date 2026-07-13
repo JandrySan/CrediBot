@@ -37,7 +37,7 @@ def test_sanitize_response_keeps_de_nada_if_user_thanked():
 def test_result_response_integrates_user_data_in_same_message():
     orchestrator = _build_orchestrator_for_unit_tests()
 
-    customer = SimpleNamespace(full_name="Juan Perez")
+    customer = SimpleNamespace(full_name="Juan Perez", national_id="9990000001")
     application = SimpleNamespace(amount=1200, term_months=24, monthly_income=900)
 
     text = orchestrator._build_result_response(
@@ -49,19 +49,33 @@ def test_result_response_integrates_user_data_in_same_message():
     assert "preaprobado" in text
     assert "PREAPROBADO" not in text
     assert "Juan Perez" in text
+    assert "9990000001" in text
     assert "24 meses" in text
     assert "ingresos mensuales" in text
+
+
+def test_question_for_national_id_explains_central_risk_lookup():
+    orchestrator = _build_orchestrator_for_unit_tests()
+
+    customer = SimpleNamespace(full_name=None, national_id=None)
+    application = SimpleNamespace(amount=None, term_months=None, monthly_income=None)
+
+    text = orchestrator._question_for_field("national_id", customer, application)
+
+    assert "cedula" in text.lower()
+    assert "10 digitos" in text.lower()
+    assert "central de riesgo" in text.lower()
 
 
 def test_question_for_name_is_cordial_and_requests_full_name():
     orchestrator = _build_orchestrator_for_unit_tests()
 
-    customer = SimpleNamespace(full_name=None)
+    customer = SimpleNamespace(full_name=None, national_id="9990000999")
     application = SimpleNamespace(amount=None, term_months=None, monthly_income=None)
 
     text = orchestrator._question_for_field("full_name", customer, application)
 
-    assert "que gusto saludarte" in text.lower()
+    assert "no encontre" in text.lower()
     assert "nombre completo" in text.lower()
 
 

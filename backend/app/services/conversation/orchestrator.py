@@ -185,10 +185,16 @@ class ConversationOrchestrator:
         return response
 
     def _question_for_field(self, field: str, customer, application) -> str:
-        if field == "full_name":
+        if field == "national_id":
             return (
                 "Hola, que gusto saludarte. Soy CrediBot y te ayudare con tu precalificacion de credito. "
-                "Para comenzar, me compartes tu nombre completo?"
+                "Para revisar tu perfil en la central de riesgo simulada, me compartes tu cedula de 10 digitos?"
+            )
+
+        if field == "full_name":
+            return (
+                "Gracias. No encontre un nombre asociado a esa cedula en la central simulada. "
+                "Me compartes tu nombre completo?"
             )
 
         if field == "amount":
@@ -435,6 +441,12 @@ class ConversationOrchestrator:
         if enriched.get(expected_field):
             return enriched
 
+        if expected_field == "national_id":
+            fallback_id = self._extract_national_id(text)
+            if fallback_id:
+                enriched["national_id"] = fallback_id
+            return enriched
+
         if expected_field == "full_name":
             fallback_name = self._extract_name(text)
             if fallback_name:
@@ -456,6 +468,7 @@ class ConversationOrchestrator:
 
     def _expected_field(self, conversation, customer, application) -> str | None:
         by_state = {
+            ConversationState.ASK_NATIONAL_ID.value: "national_id",
             ConversationState.ASK_NAME.value: "full_name",
             ConversationState.ASK_AMOUNT.value: "amount",
             ConversationState.ASK_TERM.value: "term_months",
@@ -467,6 +480,17 @@ class ConversationOrchestrator:
             return state_field
 
         return self.state_service.get_next_required_field(customer, application)
+
+    def _extract_national_id(self, text: str) -> str | None:
+        value = (text or "").strip()
+        if not value:
+            return None
+
+        match = re.search(r"\b\d{10}\b", value)
+        if not match:
+            return None
+
+        return match.group(0)
 
     def _extract_name(self, text: str) -> str | None:
         value = (text or "").strip()
@@ -556,6 +580,9 @@ class ConversationOrchestrator:
 
         if customer.full_name:
             details.append(f"nombre {customer.full_name}")
+
+        if getattr(customer, "national_id", None):
+            details.append(f"cedula {customer.national_id}")
 
         if application.amount is not None:
             details.append(f"monto de {self._format_currency(application.amount)}")

@@ -130,6 +130,7 @@ def get_conversations(db: Session = Depends(get_db)):
             "conversation_id": conversation.id,
             "customer_id": customer.id,
             "phone_number": customer.phone_number,
+            "national_id": customer.national_id,
             "full_name": customer.full_name,
             "state": conversation.current_state,
             "status": conversation.status,

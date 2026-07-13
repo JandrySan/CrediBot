@@ -72,6 +72,7 @@ export function ConversationInfoPanel({ conversation }: Props) {
           />
 
           <InfoRow label="Telefono" value={conversation.phone_number} />
+          <InfoRow label="Cedula" value={conversation.national_id || "Pendiente"} />
 
           <Divider />
 
