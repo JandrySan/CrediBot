@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     AI_ONLY_MODE: bool = False
     BACKEND_CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
     DATABASE_URL: str = ""
+    SUPABASE_DATABASE_URL: str = ""
 
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
@@ -60,6 +61,9 @@ class Settings(BaseSettings):
     def database_url(self) -> str:
         if self.DATABASE_URL:
             return self.DATABASE_URL
+
+        if self.SUPABASE_DATABASE_URL:
+            return self.SUPABASE_DATABASE_URL
 
         return (
             f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}"

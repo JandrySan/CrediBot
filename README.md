@@ -360,6 +360,7 @@ Variables principales para el backend en ECS:
 
 ```text
 DATABASE_URL
+SUPABASE_DATABASE_URL
 GROQ_API_KEY
 TWILIO_ACCOUNT_SID
 TWILIO_AUTH_TOKEN

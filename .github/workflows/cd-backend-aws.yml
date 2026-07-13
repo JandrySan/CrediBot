@@ -139,6 +139,21 @@ jobs:
             CONTAINER_NAME=$(jq -r '.containerDefinitions[0].name' task-definition.json)
           fi
 
+          HAS_DATABASE_CONFIG=$(jq --arg NAME "$CONTAINER_NAME" '
+            [
+              .containerDefinitions[]
+              | select(.name == $NAME)
+              | ((.environment // []) + (.secrets // []))[]
+              | select(.name == "DATABASE_URL" or .name == "SUPABASE_DATABASE_URL")
+            ]
+            | length
+          ' task-definition.json)
+
+          if [ "$HAS_DATABASE_CONFIG" -eq 0 ]; then
+            echo "::error::La task definition activa no tiene DATABASE_URL ni SUPABASE_DATABASE_URL. Configura la conexion a PostgreSQL/Supabase en ECS antes de desplegar."
+            exit 1
+          fi
+
           jq --arg IMAGE "$IMAGE_URI" --arg NAME "$CONTAINER_NAME" '
             del(
               .taskDefinitionArn,
