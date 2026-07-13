@@ -110,6 +110,19 @@ Resultado esperado:
 - Pide monto, plazo e ingreso.
 - Termina con resultado `OBSERVADO`.
 
+Cedulas faciles para pruebas rapidas:
+
+| Cedula | Caso |
+| --- | --- |
+| `1111111111` | Diego Calva Ortiz, APTO |
+| `2222222222` | Jandry San Mendoza, APTO |
+| `3333333333` | Joel Andrade Briones, OBSERVADO |
+| `4444444444` | Carlos Duty Zambrano, OBSERVADO |
+| `5555555555` | Maria Jose Cedeno Lopez, APTO |
+| `6666666666` | Andrea Solorzano Vera, APTO |
+| `7777777777` | Hugo Valencia Rivas, APTO |
+| `8888888888` | Karina Delgado Moreira, APTO por historial |
+
 ## 5. Verificar Supabase
 
 Perfil individual:

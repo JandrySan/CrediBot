@@ -143,6 +143,17 @@ mora maxima: 90
 resultado: OBSERVADO
 ```
 
+Cedulas faciles agregadas para demo:
+
+- `1111111111`: Diego Calva Ortiz, APTO.
+- `2222222222`: Jandry San Mendoza, APTO.
+- `3333333333`: Joel Andrade Briones, OBSERVADO por mora/pagos.
+- `4444444444`: Carlos Duty Zambrano, OBSERVADO por cobranza judicial.
+- `5555555555`: Maria Jose Cedeno Lopez, APTO.
+- `6666666666`: Andrea Solorzano Vera, APTO.
+- `7777777777`: Hugo Valencia Rivas, APTO.
+- `8888888888`: Karina Delgado Moreira, historial APTO con deuda alta.
+
 ## Flujo WhatsApp
 
 Archivo principal:
@@ -258,6 +269,8 @@ Preferencia:
 - Valores: `TEXT`, `AUDIO`.
 - `responde en audio` activa audio.
 - `responde en texto` vuelve a texto.
+- Los comandos puros de preferencia se confirman en texto. El audio se usa a
+  partir de la siguiente respuesta con contenido de negocio.
 - Recibir una nota de voz no obliga al bot a contestar en audio.
 
 ## FAQ/RAG
@@ -331,6 +344,10 @@ Funciones:
 - Detalle de chat.
 - Cedula y datos de solicitud.
 - Handoff y respuesta de asesor.
+- Al tomar una conversacion, se fuerza `response_mode=TEXT` y se intenta avisar
+  al cliente por WhatsApp.
+- Las respuestas manuales se guardan solo despues de confirmacion exitosa de
+  Twilio.
 - Cierre de conversacion.
 - Limpieza de expiradas.
 - CRUD logico de FAQs.
@@ -429,7 +446,7 @@ variables no secretas de respuesta por voz.
 Validado el 2026-07-13:
 
 - Supabase migrado.
-- Backend local: 49 pruebas.
+- Backend local: 53 pruebas.
 - Frontend local: lint y build correctos.
 - CI/CD backend y frontend correctos.
 - CloudFront responde API.

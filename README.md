@@ -83,6 +83,14 @@ Cedulas ficticias utiles para pruebas:
 
 | Cedula | Perfil | Resultado esperado |
 | --- | --- | --- |
+| `1111111111` | Diego Calva Ortiz, score 805, riesgo bajo | `APTO` |
+| `2222222222` | Jandry San Mendoza, score 682, riesgo medio | `APTO` |
+| `3333333333` | Joel Andrade Briones, score 540, mora y pagos incumplidos | `OBSERVADO` |
+| `4444444444` | Carlos Duty Zambrano, score 405, cobranza judicial | `OBSERVADO` |
+| `5555555555` | Maria Jose Cedeno Lopez, score 735, riesgo bajo | `APTO` |
+| `6666666666` | Andrea Solorzano Vera, estudiante, riesgo medio | `APTO` |
+| `7777777777` | Hugo Valencia Rivas, jubilado, riesgo bajo | `APTO` |
+| `8888888888` | Karina Delgado Moreira, autonoma con deuda alta | `APTO` por historial, revisar capacidad por reglas |
 | `9990000003` | Maria Torres Cedeno, score 485, mora maxima 90 dias | `OBSERVADO` |
 | `9990000014` | Roberto Quiroz Velez, score 420, cobranza judicial | `OBSERVADO` |
 | `9990000012` | Hugo Andrade Cevallos, score 790, riesgo bajo | perfil favorable |
@@ -186,8 +194,10 @@ Salida:
 
 - El usuario puede escribir `responde en audio`.
 - La preferencia queda guardada en `conversations.response_mode`.
+- El comando puro de cambio de modo se confirma en texto para evitar una nota
+  de voz confusa al inicio.
 - Si `AUDIO_REPLY_ENABLED=true`, el bot genera un `.ogg` y responde con
-  `<Media>`.
+  `<Media>` desde el siguiente mensaje de negocio.
 - Si falla la generacion o descarga del audio, cae a texto.
 - El usuario puede volver con `responde en texto`.
 
@@ -214,6 +224,10 @@ El dashboard permite:
 - Ver cedula, nombre y datos de solicitud.
 - Tomar una conversacion como asesor.
 - Responder al cliente por WhatsApp.
+- Al tomar una conversacion, el backend fuerza `response_mode=TEXT` y avisa al
+  cliente que un asesor humano tomo el caso.
+- Las respuestas manuales del asesor solo se guardan como enviadas si Twilio
+  confirma el envio.
 - Cerrar una conversacion en `HANDOFF`.
 - Administrar FAQs.
 - Disparar limpieza de conversaciones expiradas.
@@ -392,7 +406,7 @@ Estado validado el 2026-07-13:
 - Supabase actualizado con central simulada enriquecida.
 - `credit_bureau.find_profile('9990000003')` devuelve Maria Torres Cedeno,
   score 485, riesgo HIGH, deuda 2100, mora maxima 90 y resultado `OBSERVADO`.
-- Backend local: 49 pruebas pasando.
+- Backend local: 53 pruebas pasando.
 - Frontend: lint y build correctos.
 - GitHub Actions: backend/frontend validan y despliegan.
 - CloudFront responde dashboard y API.
