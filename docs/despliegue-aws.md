@@ -132,9 +132,9 @@ permanecen exclusivamente en AWS Secrets Manager.
 
 El rol `github-actions-credibot-deploy` necesita el permiso minimo de
 Secrets Manager definido en `docs/iam-github-actions-secrets-policy.json`.
-El rol de ejecucion de la task de ECS tambien debe permitir
-`secretsmanager:GetSecretValue` para `arn:aws:secretsmanager:us-east-1:514090178790:secret:credibot/*`;
-ECS usa ese permiso al inyectar los secretos en el contenedor.
+El rol de ejecucion de la task de ECS necesita la politica de
+`docs/iam-ecs-secrets-policy.json`; ECS usa ese permiso al inyectar los
+secretos en el contenedor.
 
 ## Secrets de aplicacion
 
