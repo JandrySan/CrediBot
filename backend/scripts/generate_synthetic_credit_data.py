@@ -53,6 +53,8 @@ def main() -> int:
     database_url = os.getenv("DATABASE_URL", "").strip()
     if not database_url:
         raise SystemExit("DATABASE_URL no esta configurada.")
+    if database_url.startswith("postgresql+psycopg2://"):
+        database_url = database_url.replace("postgresql+psycopg2://", "postgresql://", 1)
     if not database_url.startswith(("postgresql://", "postgres://")):
         raise SystemExit("El generador masivo requiere PostgreSQL.")
 
