@@ -18,15 +18,25 @@ class CreditApplication(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("credit_products.id"), index=True)
     credit_type: Mapped[str | None] = mapped_column(String(50))
+    purpose: Mapped[str | None] = mapped_column(String(160))
     amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     term_months: Mapped[int | None]
+    requested_payment_day: Mapped[int | None]
+    amortization_type: Mapped[str | None] = mapped_column(String(20))
     monthly_income: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    status: Mapped[str] = mapped_column(
+        String(30), default="DRAFT", server_default="DRAFT", index=True
+    )
     result: Mapped[str | None] = mapped_column(String(50))
     reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now()
     )
 
     customer: Mapped[Customer] = relationship(back_populates="credit_applications")
