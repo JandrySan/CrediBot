@@ -123,6 +123,7 @@ Variables/secrets requeridos:
 | `AWS_ECS_CLUSTER` | Variable | Cluster ECS. |
 | `AWS_ECS_SERVICE` | Variable | Servicio ECS. |
 | `AWS_ECS_CONTAINER_NAME` | Variable | Nombre del contenedor backend. |
+| `TWILIO_WHATSAPP_FROM` | Variable | Remitente de WhatsApp; es identificador, no credencial. |
 | `AWS_S3_FRONTEND_BUCKET` | Variable | Bucket del frontend. |
 | `AWS_CLOUDFRONT_DISTRIBUTION_ID` | Variable | Distribucion CloudFront. |
 | `FRONTEND_PUBLIC_URL` | Variable | URL publica del dashboard. |
@@ -149,10 +150,12 @@ Secrets actuales esperados:
 | `credibot/groq-api-key` | `GROQ_API_KEY` |
 | `credibot/twilio-account-sid` | `TWILIO_ACCOUNT_SID` |
 | `credibot/twilio-auth-token` | `TWILIO_AUTH_TOKEN` |
-| `credibot/twilio-webhook-url` | `TWILIO_WEBHOOK_URL` |
-| `credibot/twilio-whatsapp-from` | `TWILIO_WHATSAPP_FROM` |
 | `credibot/dashboard-admin-password` | `DASHBOARD_ADMIN_PASSWORD` |
 | `credibot/dashboard-jwt-secret` | `DASHBOARD_JWT_SECRET` |
+
+`TWILIO_WEBHOOK_URL` se deriva de `FRONTEND_PUBLIC_URL` durante el despliegue.
+No es un secreto. El remitente de WhatsApp tampoco es una credencial y se
+mantiene como variable de GitHub Actions.
 
 Variables no secretas recomendadas en ECS:
 

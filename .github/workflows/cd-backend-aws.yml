@@ -17,6 +17,7 @@ env:
   AWS_ECS_SERVICE: ${{ vars.AWS_ECS_SERVICE || secrets.AWS_ECS_SERVICE }}
   AWS_ECS_CONTAINER_NAME: ${{ vars.AWS_ECS_CONTAINER_NAME || secrets.AWS_ECS_CONTAINER_NAME }}
   FRONTEND_PUBLIC_URL: ${{ vars.FRONTEND_PUBLIC_URL || secrets.FRONTEND_PUBLIC_URL }}
+  TWILIO_WHATSAPP_FROM: ${{ vars.TWILIO_WHATSAPP_FROM }}
 
 jobs:
   validar-backend:
@@ -81,7 +82,7 @@ jobs:
       - name: Validar configuracion requerida
         run: |
           missing=0
-          for name in AWS_REGION AWS_ECR_REPOSITORY AWS_ROLE_ARN AWS_ECS_CLUSTER AWS_ECS_SERVICE FRONTEND_PUBLIC_URL DASHBOARD_ADMIN_PASSWORD_SECRET DASHBOARD_JWT_SECRET_SECRET; do
+          for name in AWS_REGION AWS_ECR_REPOSITORY AWS_ROLE_ARN AWS_ECS_CLUSTER AWS_ECS_SERVICE FRONTEND_PUBLIC_URL TWILIO_WHATSAPP_FROM DASHBOARD_ADMIN_PASSWORD_SECRET DASHBOARD_JWT_SECRET_SECRET; do
             if [ -z "${!name}" ]; then
               echo "::error::$name no esta configurada en GitHub Actions."
               missing=1
@@ -113,9 +114,7 @@ jobs:
             credibot/database-url \
             credibot/groq-api-key \
             credibot/twilio-account-sid \
-            credibot/twilio-auth-token \
-            credibot/twilio-webhook-url \
-            credibot/twilio-whatsapp-from; do
+            credibot/twilio-auth-token; do
             aws secretsmanager describe-secret --secret-id "$secret_id" >/dev/null
           done
 
@@ -194,8 +193,6 @@ jobs:
           GROQ_SECRET_ARN=$(aws secretsmanager describe-secret --secret-id credibot/groq-api-key --query ARN --output text)
           TWILIO_SID_SECRET_ARN=$(aws secretsmanager describe-secret --secret-id credibot/twilio-account-sid --query ARN --output text)
           TWILIO_TOKEN_SECRET_ARN=$(aws secretsmanager describe-secret --secret-id credibot/twilio-auth-token --query ARN --output text)
-          TWILIO_WEBHOOK_SECRET_ARN=$(aws secretsmanager describe-secret --secret-id credibot/twilio-webhook-url --query ARN --output text)
-          TWILIO_FROM_SECRET_ARN=$(aws secretsmanager describe-secret --secret-id credibot/twilio-whatsapp-from --query ARN --output text)
           DASHBOARD_PASSWORD_SECRET_ARN=$(aws secretsmanager describe-secret --secret-id credibot/dashboard-admin-password --query ARN --output text)
           DASHBOARD_JWT_SECRET_ARN=$(aws secretsmanager describe-secret --secret-id credibot/dashboard-jwt-secret --query ARN --output text)
 
@@ -216,8 +213,8 @@ jobs:
             --arg GROQ_SECRET_ARN "$GROQ_SECRET_ARN" \
             --arg TWILIO_SID_SECRET_ARN "$TWILIO_SID_SECRET_ARN" \
             --arg TWILIO_TOKEN_SECRET_ARN "$TWILIO_TOKEN_SECRET_ARN" \
-            --arg TWILIO_WEBHOOK_SECRET_ARN "$TWILIO_WEBHOOK_SECRET_ARN" \
-            --arg TWILIO_FROM_SECRET_ARN "$TWILIO_FROM_SECRET_ARN" \
+            --arg TWILIO_WEBHOOK_URL "$FRONTEND_PUBLIC_URL/webhook/whatsapp" \
+            --arg TWILIO_WHATSAPP_FROM "$TWILIO_WHATSAPP_FROM" \
             --arg DASHBOARD_PASSWORD_SECRET_ARN "$DASHBOARD_PASSWORD_SECRET_ARN" \
             --arg DASHBOARD_JWT_SECRET_ARN "$DASHBOARD_JWT_SECRET_ARN" '
             def remove_named($names):
@@ -227,6 +224,7 @@ jobs:
               [
                 "APP_NAME", "SUPABASE_DATABASE_URL", "DB_HOST", "DB_PORT",
                 "DB_NAME", "DB_USER", "DB_PASSWORD", "TWILIO_WHATSAPP_NUMBER",
+                "TWILIO_WEBHOOK_URL", "TWILIO_WHATSAPP_FROM",
                 "AUDIO_STT_LANGUAGE", "AUDIO_REPLY_LANGUAGE",
                 "AUDIO_REPLY_PUBLIC_BASE_URL", "DASHBOARD_ADMIN_PASSWORD",
                 "DASHBOARD_JWT_SECRET", "DASHBOARD_ADMIN_USERNAME",
@@ -246,6 +244,8 @@ jobs:
               | .environment += [
                   {"name": "TWILIO_ENABLED", "value": "true"},
                   {"name": "TWILIO_VALIDATE_SIGNATURE", "value": "true"},
+                  {"name": "TWILIO_WEBHOOK_URL", "value": $TWILIO_WEBHOOK_URL},
+                  {"name": "TWILIO_WHATSAPP_FROM", "value": $TWILIO_WHATSAPP_FROM},
                   {"name": "DASHBOARD_AUTH_ENABLED", "value": "true"},
                   {"name": "DASHBOARD_ADMIN_USERNAME", "value": "admin"},
                   {"name": "RUN_DB_MIGRATIONS", "value": "true"},
@@ -258,8 +258,6 @@ jobs:
                   {"name": "GROQ_API_KEY", "valueFrom": $GROQ_SECRET_ARN},
                   {"name": "TWILIO_ACCOUNT_SID", "valueFrom": $TWILIO_SID_SECRET_ARN},
                   {"name": "TWILIO_AUTH_TOKEN", "valueFrom": $TWILIO_TOKEN_SECRET_ARN},
-                  {"name": "TWILIO_WEBHOOK_URL", "valueFrom": $TWILIO_WEBHOOK_SECRET_ARN},
-                  {"name": "TWILIO_WHATSAPP_FROM", "valueFrom": $TWILIO_FROM_SECRET_ARN},
                   {"name": "DASHBOARD_ADMIN_PASSWORD", "valueFrom": $DASHBOARD_PASSWORD_SECRET_ARN},
                   {"name": "DASHBOARD_JWT_SECRET", "valueFrom": $DASHBOARD_JWT_SECRET_ARN}
                 ];
@@ -330,15 +328,19 @@ jobs:
             "$FRONTEND_PUBLIC_URL/webhook/whatsapp")
           test "$WEBHOOK_STATUS" = "403"
 
-      - name: Programar eliminacion de secret obsoleto
+      - name: Programar eliminacion de secrets obsoletos
         run: |
-          if aws secretsmanager describe-secret \
-            --secret-id credibot/twilio-whatsapp-number >/dev/null 2>&1; then
-            aws secretsmanager delete-secret \
-              --secret-id credibot/twilio-whatsapp-number \
-              --recovery-window-in-days 7 >/dev/null \
-              || echo "::warning::No se pudo programar la eliminacion del secret heredado."
-          fi
+          for secret_id in \
+            credibot/twilio-webhook-url \
+            credibot/twilio-whatsapp-from \
+            credibot/twilio-whatsapp-number; do
+            if aws secretsmanager describe-secret --secret-id "$secret_id" >/dev/null 2>&1; then
+              aws secretsmanager delete-secret \
+                --secret-id "$secret_id" \
+                --recovery-window-in-days 7 >/dev/null \
+                || echo "::warning::No se pudo programar la eliminacion de $secret_id."
+            fi
+          done
 
       - name: Resumen del despliegue
         run: |
