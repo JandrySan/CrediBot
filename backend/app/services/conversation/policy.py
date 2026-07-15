@@ -110,9 +110,7 @@ class ConversationPolicy:
             return True
 
         normalized = "".join(
-            char
-            for char in unicodedata.normalize("NFD", raw)
-            if unicodedata.category(char) != "Mn"
+            char for char in unicodedata.normalize("NFD", raw) if unicodedata.category(char) != "Mn"
         )
         normalized = re.sub(r"[^a-z\s]", " ", normalized)
         normalized = re.sub(r"\s+", " ", normalized).strip()

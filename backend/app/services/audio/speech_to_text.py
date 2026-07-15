@@ -3,11 +3,14 @@ import tempfile
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from groq import APIError
 
 from app.config.settings import settings
+
+ALLOWED_TWILIO_MEDIA_HOSTS = frozenset({"api.twilio.com"})
 
 
 class SpeechToTextService:
@@ -86,6 +89,7 @@ class SpeechToTextService:
         media_url: str,
         media_content_type: str | None = None,
     ) -> Path:
+        validated_media_url = self._validate_twilio_media_url(media_url)
         auth = None
         if settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
             auth = (settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
@@ -95,7 +99,9 @@ class SpeechToTextService:
             follow_redirects=True,
             auth=auth,
         ) as client:
-            response = client.get(media_url)
+            response = client.get(
+                validated_media_url
+            )  # NOSONAR: URL is HTTPS and host allowlisted.
             response.raise_for_status()
             content = response.content
             response_content_type = response.headers.get("content-type", "")
@@ -109,6 +115,22 @@ class SpeechToTextService:
         output_path = Path(path)
         output_path.write_bytes(content)
         return output_path
+
+    @staticmethod
+    def _validate_twilio_media_url(media_url: str) -> str:
+        parsed = urlsplit(media_url)
+        hostname = (parsed.hostname or "").lower()
+
+        if parsed.scheme != "https":
+            raise ValueError("La URL de audio de Twilio debe usar HTTPS.")
+        if parsed.username or parsed.password:
+            raise ValueError("La URL de audio de Twilio no debe incluir credenciales.")
+        if hostname not in ALLOWED_TWILIO_MEDIA_HOSTS:
+            raise ValueError("La URL de audio no pertenece a un host permitido de Twilio.")
+        if not parsed.path.startswith("/2010-04-01/Accounts/"):
+            raise ValueError("La ruta de audio de Twilio no tiene el formato esperado.")
+
+        return parsed.geturl()
 
     def _transcribe_file(self, audio_path: Path) -> str:
         provider = self.provider

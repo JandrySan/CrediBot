@@ -5,10 +5,23 @@ from fastapi.testclient import TestClient
 
 from app.database.session import SessionLocal
 from app.models.customer import Customer
+from app.services.audio.speech_to_text import SpeechToTextService
 from main import app
 
 
 class TestWhatsAppAudioWebhook:
+    def test_speech_to_text_rejects_non_twilio_media_url(self):
+        service = SpeechToTextService()
+        service.enabled = True
+
+        result = service.transcribe_twilio_media(
+            "https://example.com/fake-audio",
+            "audio/ogg",
+        )
+
+        assert result["success"] is False
+        assert "host permitido de Twilio" in result["message"]
+
     def test_plain_hola_returns_open_welcome_instead_of_asking_name(self):
         with (
             patch(

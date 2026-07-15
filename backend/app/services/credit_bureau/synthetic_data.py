@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import random
+import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -30,6 +30,63 @@ class SyntheticChunk:
             "inquiries": len(self.inquiries),
             "risk_events": len(self.risk_events),
         }
+
+
+class DeterministicSyntheticRng:
+    """Generador deterministico para datos demo, sin PRNG inseguro."""
+
+    def __init__(self, seed: str):
+        self.seed = seed.encode("utf-8")
+        self.counter = 0
+
+    def _next_unit(self) -> float:
+        self.counter += 1
+        digest = hashlib.sha256(
+            self.seed + b":" + self.counter.to_bytes(16, byteorder="big")
+        ).digest()
+        return int.from_bytes(digest[:8], byteorder="big") / 2**64
+
+    def randint(self, minimum: int, maximum: int) -> int:
+        if minimum > maximum:
+            raise ValueError("El minimo no puede ser mayor al maximo.")
+        span = maximum - minimum + 1
+        return minimum + min(int(self._next_unit() * span), span - 1)
+
+    def uniform(self, minimum: float, maximum: float) -> float:
+        return minimum + ((maximum - minimum) * self._next_unit())
+
+    def triangular(self, minimum: float, maximum: float, mode: float) -> float:
+        if not minimum <= mode <= maximum:
+            raise ValueError("La moda debe estar dentro del rango.")
+
+        unit = self._next_unit()
+        midpoint = (mode - minimum) / (maximum - minimum)
+        if unit <= midpoint:
+            return minimum + ((unit * (maximum - minimum) * (mode - minimum)) ** 0.5)
+        return maximum - (((1 - unit) * (maximum - minimum) * (maximum - mode)) ** 0.5)
+
+    def random(self) -> float:
+        return self._next_unit()
+
+    def choice(self, values):
+        if not values:
+            raise ValueError("No se puede elegir de una secuencia vacia.")
+        return values[self.randint(0, len(values) - 1)]
+
+    def choices(self, values, weights, k: int = 1):
+        total = sum(weights)
+        selected = []
+        for _ in range(k):
+            threshold = self._next_unit() * total
+            cumulative = 0
+            for value, weight in zip(values, weights, strict=True):
+                cumulative += weight
+                if threshold <= cumulative:
+                    selected.append(value)
+                    break
+            else:
+                selected.append(values[-1])
+        return selected
 
 
 class SyntheticCreditDataGenerator:
@@ -126,7 +183,7 @@ class SyntheticCreditDataGenerator:
         return chunk
 
     def _generate_person(self, index: int, chunk: SyntheticChunk) -> None:
-        rng = random.Random(f"{self.seed}:person:{index}")
+        rng = DeterministicSyntheticRng(f"{self.seed}:person:{index}")
         person_id = self._uuid(f"person:{index}")
         tier = self._weighted(rng, (("LOW", 55), ("MEDIUM", 30), ("HIGH", 15)))
         employment = self._weighted(
@@ -230,7 +287,7 @@ class SyntheticCreditDataGenerator:
 
     def _generate_account(
         self,
-        rng: random.Random,
+        rng: DeterministicSyntheticRng,
         person_id: uuid.UUID,
         person_index: int,
         account_index: int,
@@ -384,7 +441,7 @@ class SyntheticCreditDataGenerator:
         return uuid.uuid5(SYNTHETIC_NAMESPACE, f"{self.batch_key}:{key}")
 
     @staticmethod
-    def _weighted(rng: random.Random, choices: tuple[tuple[str, int], ...]) -> str:
+    def _weighted(rng: DeterministicSyntheticRng, choices: tuple[tuple[str, int], ...]) -> str:
         values, weights = zip(*choices, strict=True)
         return rng.choices(values, weights=weights, k=1)[0]
 
