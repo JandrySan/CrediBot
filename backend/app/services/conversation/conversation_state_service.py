@@ -23,11 +23,20 @@ class ConversationStateService:
 
     def state_for_missing_field(self, field: str) -> str:
         mapping = {
+            "privacy_consent": ConversationState.ASK_PRIVACY_CONSENT.value,
+            "product_code": ConversationState.ASK_PRODUCT.value,
             "national_id": ConversationState.ASK_NATIONAL_ID.value,
+            "bureau_consent": ConversationState.ASK_BUREAU_CONSENT.value,
             "full_name": ConversationState.ASK_NAME.value,
+            "age": ConversationState.ASK_AGE.value,
+            "employment_status": ConversationState.ASK_EMPLOYMENT.value,
+            "employment_tenure": ConversationState.ASK_EMPLOYMENT_TENURE.value,
             "amount": ConversationState.ASK_AMOUNT.value,
             "term_months": ConversationState.ASK_TERM.value,
             "monthly_income": ConversationState.ASK_INCOME.value,
+            "monthly_expenses": ConversationState.ASK_EXPENSES.value,
+            "existing_debt_payments": ConversationState.ASK_DEBTS.value,
+            "pep_status": ConversationState.ASK_PEP_STATUS.value,
         }
 
         return mapping.get(field, ConversationState.START.value)

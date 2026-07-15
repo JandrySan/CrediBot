@@ -26,9 +26,14 @@ class ConversationInputExtractor:
         ai_data: dict,
     ) -> dict:
         enriched = dict(ai_data or {})
+        deterministic = self.extract_additional(text)
+        for field, value in deterministic.items():
+            if enriched.get(field) is None and value is not None:
+                enriched[field] = value
+
         expected_field = self.expected_field(conversation, customer, application)
 
-        if not expected_field or enriched.get(expected_field):
+        if not expected_field or enriched.get(expected_field) is not None:
             return enriched
 
         extractor = {
@@ -49,6 +54,111 @@ class ConversationInputExtractor:
             )
 
         return enriched
+
+    def enrich_pending_field(self, text: str, field: str | None, data: dict) -> dict:
+        enriched = dict(data or {})
+        if not field or enriched.get(field) is not None:
+            return enriched
+        numeric_fields = {
+            "age",
+            "employment_tenure",
+            "amount",
+            "term_months",
+            "monthly_income",
+            "monthly_expenses",
+            "existing_debt_payments",
+        }
+        if field in numeric_fields and re.fullmatch(
+            r"\s*[$]?\s*\d[\d\.,]*\s*(?:mes(?:es)?|a(?:n|ñ)os?|dolares?)?\s*",
+            (text or "").lower(),
+        ):
+            for other_field in numeric_fields - {field}:
+                enriched.pop(other_field, None)
+        additional = self.extract_additional(text)
+        if additional.get(field) is not None:
+            enriched[field] = additional[field]
+            return enriched
+        normalized = (text or "").strip().lower()
+        if field == "pep_status":
+            if normalized in {"no", "no soy", "ninguna", "not pep"}:
+                enriched[field] = "NOT_PEP"
+            elif normalized in {"si", "sí", "soy", "soy pep"}:
+                enriched[field] = "PEP"
+            elif "no estoy seguro" in normalized:
+                enriched[field] = "UNKNOWN"
+            return enriched
+        extractor = {
+            "national_id": self.extract_national_id,
+            "full_name": self.extract_name,
+            "age": self.extract_integer,
+            "employment_tenure": self.extract_term_months,
+            "amount": self.extract_decimal,
+            "term_months": self.extract_term_months,
+            "monthly_income": self.extract_decimal,
+            "monthly_expenses": self.extract_decimal,
+            "existing_debt_payments": self.extract_decimal,
+        }.get(field)
+        if extractor:
+            value = extractor(text)
+            if value is not None:
+                enriched[field] = str(value) if isinstance(value, Decimal) else value
+        return enriched
+
+    def extract_additional(self, text: str) -> dict:
+        normalized = (text or "").lower()
+        result: dict = {}
+        national_id = self.extract_national_id(text)
+        if national_id:
+            result["national_id"] = national_id
+        if any(word in normalized for word in ("microcredito", "microcrédito", "negocio")):
+            result["product_code"] = "MICROCREDITO_MINORISTA_DEMO"
+        elif any(word in normalized for word in ("consumo", "personal", "prestamo", "préstamo")):
+            result["product_code"] = "CONSUMO_PERSONAL_DEMO"
+
+        age_match = re.search(r"(?:tengo|edad(?:\s+de)?)\s+(\d{1,2})\s+a(?:n|ñ)os", normalized)
+        if age_match:
+            result["age"] = int(age_match.group(1))
+        if any(word in normalized for word in ("independiente", "negocio propio", "ruc")):
+            result["employment_status"] = "SELF_EMPLOYED"
+        elif any(word in normalized for word in ("empleado", "dependencia", "asalariado")):
+            result["employment_status"] = "EMPLOYED"
+        elif any(word in normalized for word in ("jubilado", "pensionista")):
+            result["employment_status"] = "RETIRED"
+        elif "desempleado" in normalized:
+            result["employment_status"] = "UNEMPLOYED"
+        elif "estudiante" in normalized:
+            result["employment_status"] = "STUDENT"
+
+        number = self.extract_decimal(text)
+        if number is not None:
+            if any(word in normalized for word in ("gasto", "egreso")):
+                result["monthly_expenses"] = str(number)
+            elif any(word in normalized for word in ("deuda", "cuotas actuales", "pago deudas")):
+                result["existing_debt_payments"] = str(number)
+            elif any(word in normalized for word in ("ingreso", "sueldo", "gano", "mensual")):
+                result["monthly_income"] = str(number)
+            elif any(word in normalized for word in ("monto", "solicito", "necesito", "credito")):
+                result["amount"] = str(number)
+        term = self.extract_term_months(text)
+        if (
+            term
+            and age_match is None
+            and any(word in normalized for word in ("plazo", "mes", "ano", "año"))
+        ):
+            if any(word in normalized for word in ("antiguedad", "trabajo", "negocio hace")):
+                result["employment_tenure"] = term
+            else:
+                result["term_months"] = term
+        if "no soy pep" in normalized:
+            result["pep_status"] = "NOT_PEP"
+        elif "soy pep" in normalized:
+            result["pep_status"] = "PEP"
+        name_match = re.search(r"(?:me llamo|mi nombre es)\s+(.+)", text, flags=re.IGNORECASE)
+        if name_match:
+            name = self.extract_name(name_match.group(1))
+            if name:
+                result["full_name"] = name
+        return result
 
     def expected_field(self, conversation, customer, application) -> str | None:
         by_state = {
@@ -116,6 +226,11 @@ class ConversationInputExtractor:
             if any(token in value for token in ("ano", "anos", "year", "years"))
             else number
         )
+
+    @staticmethod
+    def extract_integer(text: str) -> int | None:
+        match = re.search(r"\d+", (text or "").strip())
+        return int(match.group(0)) if match else None
 
     def clear_invalid_customer_name(self, customer) -> bool:
         full_name = (getattr(customer, "full_name", "") or "").strip()

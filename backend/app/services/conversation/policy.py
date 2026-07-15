@@ -50,8 +50,19 @@ class ConversationPolicy:
 
     @classmethod
     def is_handoff_requested(cls, text: str, ai_data: dict) -> bool:
-        return ai_data.get("intent") == "asesor" or any(
-            word in (text or "").lower() for word in cls.HANDOFF_WORDS
+        if ai_data.get("intent") == "asesor":
+            return True
+        normalized = (text or "").lower()
+        if any(
+            re.search(rf"\b{re.escape(word)}\b", normalized)
+            for word in ("asesor", "humano", "agente", "ejecutivo")
+        ):
+            return True
+        return bool(
+            re.search(
+                r"\b(?:hablar|comunicarme|atencion)\b.{0,30}\bpersona(?:\s+real)?\b",
+                normalized,
+            )
         )
 
     @classmethod

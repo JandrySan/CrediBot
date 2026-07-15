@@ -1,64 +1,22 @@
 from app.state_machine.states import ConversationState
 
-STATE_TRANSITIONS: dict[ConversationState, list[ConversationState]] = {
-    ConversationState.START: [
-        ConversationState.ASK_NATIONAL_ID,
-        ConversationState.ASK_NAME,
-        ConversationState.ASK_AMOUNT,
-        ConversationState.HANDOFF,
-        ConversationState.END,
-    ],
-    ConversationState.ASK_NATIONAL_ID: [
-        ConversationState.ASK_NAME,
-        ConversationState.ASK_AMOUNT,
-        ConversationState.ASK_TERM,
-        ConversationState.ASK_INCOME,
-        ConversationState.SHOW_RESULT,
-        ConversationState.HANDOFF,
-        ConversationState.END,
-    ],
-    ConversationState.ASK_NAME: [
-        ConversationState.ASK_AMOUNT,
-        ConversationState.ASK_TERM,
-        ConversationState.ASK_INCOME,
-        ConversationState.SHOW_RESULT,
-        ConversationState.HANDOFF,
-        ConversationState.END,
-    ],
-    ConversationState.ASK_AMOUNT: [
-        ConversationState.ASK_TERM,
-        ConversationState.ASK_INCOME,
-        ConversationState.SHOW_RESULT,
-        ConversationState.HANDOFF,
-        ConversationState.END,
-    ],
-    ConversationState.ASK_TERM: [
-        ConversationState.ASK_INCOME,
-        ConversationState.SHOW_RESULT,
-        ConversationState.HANDOFF,
-        ConversationState.END,
-    ],
-    ConversationState.ASK_INCOME: [
-        ConversationState.SHOW_RESULT,
-        ConversationState.HANDOFF,
-        ConversationState.END,
-    ],
-    ConversationState.SHOW_RESULT: [
-        ConversationState.HANDOFF,
-        ConversationState.END,
-    ],
-    ConversationState.HANDOFF: [
-        ConversationState.END,
-    ],
-    ConversationState.END: [],
-}
+COLLECTION_STATES = tuple(
+    state
+    for state in ConversationState
+    if state not in {ConversationState.HANDOFF, ConversationState.END}
+)
 
-VALID_TRANSITIONS = STATE_TRANSITIONS
+STATE_TRANSITIONS: dict[ConversationState, list[ConversationState]] = {
+    state: [target for target in COLLECTION_STATES if target != state]
+    + [ConversationState.HANDOFF, ConversationState.END]
+    for state in COLLECTION_STATES
+}
+STATE_TRANSITIONS[ConversationState.HANDOFF] = [ConversationState.END]
+STATE_TRANSITIONS[ConversationState.END] = []
 
 
 def is_valid_transition(current: ConversationState, next_state: ConversationState) -> bool:
-    allowed = STATE_TRANSITIONS.get(current, [])
-    return next_state in allowed
+    return next_state in STATE_TRANSITIONS.get(current, []) or current == next_state
 
 
 def get_allowed_transitions(state: ConversationState) -> list[ConversationState]:
@@ -67,8 +25,6 @@ def get_allowed_transitions(state: ConversationState) -> list[ConversationState]
 
 def can_transition(current_state: str, next_state: str) -> bool:
     try:
-        current = ConversationState(current_state)
-        target = ConversationState(next_state)
-        return is_valid_transition(current, target)
+        return is_valid_transition(ConversationState(current_state), ConversationState(next_state))
     except ValueError:
         return False

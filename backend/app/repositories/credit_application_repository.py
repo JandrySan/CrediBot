@@ -18,7 +18,7 @@ class CreditApplicationRepository:
     def get_or_create_latest(self, customer_id: int):
         application = self.get_latest_by_customer(customer_id)
 
-        if application and application.result is None:
+        if application and application.status not in {"CLOSED", "CANCELLED"}:
             return application
 
         application = CreditApplication(customer_id=customer_id)

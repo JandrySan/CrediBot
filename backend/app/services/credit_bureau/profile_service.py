@@ -22,35 +22,25 @@ class CreditBureauProfileService:
         query = text(
             """
             SELECT
-                national_id,
-                phone_number,
-                full_name,
-                age,
-                province,
-                city,
-                employment_status,
-                occupation,
-                reported_monthly_income,
-                central_risk_status,
-                central_risk_reason,
-                credit_score,
-                risk_level,
-                total_accounts,
-                active_accounts,
-                problematic_accounts,
-                total_outstanding_debt,
-                total_monthly_debt_payment,
-                debt_to_income_ratio,
-                max_days_past_due,
-                missed_payments,
-                late_payments,
-                written_off_accounts,
-                judicial_collection_events,
-                restructured_accounts,
-                recent_inquiries_6m,
-                recommended_max_installment,
-                preliminary_history_result
-            FROM credit_bureau.find_profile(:identifier)
+                summary.*,
+                person.job_tenure_months,
+                person.business_tenure_months,
+                person.other_monthly_income,
+                person.monthly_living_expenses,
+                person.housing_status,
+                person.assets_total,
+                person.liabilities_total,
+                person.source_of_funds,
+                person.identity_verified,
+                person.income_verification_status,
+                person.pep_status,
+                person.is_synthetic,
+                person.dataset_batch_id
+            FROM credit_bureau.credit_profile_summary summary
+            JOIN credit_bureau.people person ON person.id = summary.person_id
+            WHERE summary.national_id = :identifier
+               OR summary.phone_number = :identifier
+            LIMIT 1
             """
         )
 
@@ -72,6 +62,21 @@ class CreditBureauProfileService:
             "employment_status": row.get("employment_status"),
             "occupation": row.get("occupation"),
             "reported_monthly_income": self._to_number(row.get("reported_monthly_income")),
+            "other_monthly_income": self._to_number(row.get("other_monthly_income")),
+            "monthly_living_expenses": self._to_number(row.get("monthly_living_expenses")),
+            "job_tenure_months": self._to_int(row.get("job_tenure_months")),
+            "business_tenure_months": self._to_int(row.get("business_tenure_months")),
+            "housing_status": row.get("housing_status"),
+            "assets_total": self._to_number(row.get("assets_total")),
+            "liabilities_total": self._to_number(row.get("liabilities_total")),
+            "source_of_funds": row.get("source_of_funds"),
+            "identity_verified": bool(row.get("identity_verified")),
+            "income_verification_status": row.get("income_verification_status"),
+            "pep_status": row.get("pep_status"),
+            "is_synthetic": bool(row.get("is_synthetic")),
+            "dataset_batch_id": (
+                str(row.get("dataset_batch_id")) if row.get("dataset_batch_id") else None
+            ),
             "central_risk_status": row.get("central_risk_status"),
             "central_risk_reason": row.get("central_risk_reason"),
             "credit_score": self._to_int(row["credit_score"]),

@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.config.settings import settings
 from app.repositories.ai_analysis_repository import AIAnalysisRepository
+from app.repositories.conversation_context_repository import ConversationContextRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.conversation_state_history_repository import (
     ConversationStateHistoryRepository,
@@ -10,13 +11,18 @@ from app.repositories.credit_application_repository import CreditApplicationRepo
 from app.repositories.customer_repository import CustomerRepository
 from app.repositories.message_repository import MessageRepository
 from app.services.ai.ai_orchestrator import AIOrchestrator
+from app.services.conversation.adaptive_flow import AdaptiveCreditFlow
 from app.services.conversation.conversation_state_service import ConversationStateService
 from app.services.conversation.credit_application_service import CreditApplicationService
+from app.services.conversation.credit_prequalification_service import (
+    CreditPrequalificationService,
+)
 from app.services.conversation.faq_answer_service import FAQAnswerService
 from app.services.conversation.history import build_ai_history
 from app.services.conversation.input_extractor import ConversationInputExtractor
 from app.services.conversation.policy import ConversationPolicy
 from app.services.conversation.response_builder import ConversationResponseBuilder
+from app.services.conversation.slot_service import ConversationSlotService
 from app.state_machine.states import ConversationState
 from app.state_machine.transitions import can_transition
 
@@ -28,6 +34,7 @@ class ConversationOrchestrator:
         self.db = db
         self.customer_repo = CustomerRepository(db)
         self.conversation_repo = ConversationRepository(db)
+        self.context_repo = ConversationContextRepository(db)
         self.message_repo = MessageRepository(db)
         self.application_repo = CreditApplicationRepository(db)
         self.ai_analysis_repo = AIAnalysisRepository(db)
@@ -40,6 +47,9 @@ class ConversationOrchestrator:
             self.credit_service,
         )
         self.responses = ConversationResponseBuilder()
+        self.slots = ConversationSlotService()
+        self.adaptive_flow = AdaptiveCreditFlow(db, self.slots)
+        self.prequalification = CreditPrequalificationService(db, self.slots)
         self.faq_service = FAQAnswerService(db, self.ai.response_generator)
 
     def handle_text_message(self, phone_number: str, text: str) -> str:
@@ -68,6 +78,7 @@ class ConversationOrchestrator:
     ) -> str:
         customer = self.customer_repo.get_or_create(phone_number)
         conversation = self.conversation_repo.get_or_create_active(customer.id)
+        context = self.context_repo.get_or_create(conversation.id)
         application = self.application_repo.get_or_create_latest(customer.id)
         self.input_extractor.clear_invalid_customer_name(customer)
         self._save_message(conversation.id, "INBOUND", text, inbound_message_type)
@@ -77,12 +88,51 @@ class ConversationOrchestrator:
         if conversation.status == "HANDOFF":
             return ""
 
+        self.adaptive_flow.handle_pending_consent(
+            context,
+            customer,
+            conversation,
+            text,
+        )
+        privacy_status = self.slots.status(context, "privacy_consent")
+        if privacy_status == "DECLINED":
+            faq_response = self.faq_service.answer(text)
+            response = faq_response or (
+                "Entendido. No continuare la precalificacion ni usare datos adicionales. "
+                "Puedo darte informacion general sobre productos o derivarte con un asesor."
+            )
+            return self._save_outbound(conversation.id, response)
+        if privacy_status != "GRANTED":
+            if ConversationPolicy.is_plain_greeting(text):
+                return self._save_outbound(
+                    conversation.id,
+                    ConversationPolicy.welcome_response(),
+                )
+            faq_response = self.faq_service.answer(text)
+            if faq_response:
+                return self._save_outbound(conversation.id, faq_response)
+            context.pending_field = "privacy_consent"
+            self._change_state(
+                conversation,
+                ConversationState.ASK_PRIVACY_CONSENT.value,
+                "Se requiere informar y registrar el consentimiento de privacidad",
+            )
+            return self._save_outbound(
+                conversation.id,
+                self.adaptive_flow.privacy_question(),
+            )
+
         ai_data = self.input_extractor.enrich(
             conversation,
             customer,
             application,
             text,
             self.ai.analyze_message(text),
+        )
+        ai_data = self.input_extractor.enrich_pending_field(
+            text,
+            context.pending_field,
+            ai_data,
         )
         self.ai_analysis_repo.save_analysis(
             conversation_id=conversation.id,
@@ -105,44 +155,82 @@ class ConversationOrchestrator:
                 conversation.id,
                 ConversationPolicy.welcome_response(),
             )
-        if ai_data.get("intent") == "consulta":
-            ai_response = self._generate_ai_response(conversation.id, text)
-            if ai_response:
-                return self._save_outbound(conversation.id, ai_response)
+        self.adaptive_flow.apply_entities(
+            context,
+            customer,
+            application,
+            ai_data,
+        )
+        if context.pending_field and self.slots.status(context, context.pending_field) in {
+            "CONFIRMED",
+            "VERIFIED",
+            "GRANTED",
+            "DECLINED",
+        }:
+            context.pending_field = None
+        bureau_profile = self.adaptive_flow.hydrate_from_bureau(context, customer)
+        self.adaptive_flow.apply_entities(context, customer, application, {})
 
-        faq_response = self.faq_service.answer(text)
-        if faq_response:
-            return self._save_outbound(conversation.id, faq_response)
+        side_answer = ""
+        if ai_data.get("intent") == "consulta":
+            side_answer = self._generate_ai_response(
+                conversation.id,
+                text,
+                allow_credit_bureau=self.slots.status(context, "bureau_consent") == "GRANTED",
+            )
+        if not side_answer:
+            side_answer = self.faq_service.answer(text)
 
         return self._continue_credit_flow(
             conversation,
+            context,
             customer,
             application,
             text,
-            ai_data,
+            bureau_profile,
+            side_answer,
         )
 
     def _continue_credit_flow(
         self,
         conversation,
+        context,
         customer,
         application,
         text: str,
-        ai_data: dict,
+        bureau_profile: dict | None,
+        side_answer: str = "",
     ) -> str:
-        self.credit_service.apply_extracted_data(customer, application, ai_data, self.db)
-        evaluation = self.credit_service.evaluate_if_complete(
-            application,
-            customer=customer,
-            db=self.db,
-        )
-
-        if evaluation:
-            self.application_repo.update(
-                application,
-                result=evaluation["result"],
-                reason=evaluation["reason"],
+        conflicts = self.slots.conflicts(context)
+        if conflicts:
+            field, slot = next(iter(conflicts.items()))
+            context.pending_field = field
+            question = self._conflict_question(field, slot)
+            return self._save_outbound(
+                conversation.id,
+                self._join_answer_and_question(side_answer, question),
             )
+
+        missing_field = self.slots.next_required_field(context)
+        if missing_field:
+            context.pending_field = missing_field
+            question = (
+                self.adaptive_flow.bureau_question()
+                if missing_field == "bureau_consent"
+                else self.responses.question_for_field(missing_field, customer, application)
+            )
+            self._change_state(
+                conversation,
+                self.state_service.state_for_missing_field(missing_field),
+                f"Falta el campo conversacional: {missing_field}",
+            )
+            return self._save_outbound(
+                conversation.id,
+                self._join_answer_and_question(side_answer, question),
+            )
+
+        evaluation = self.prequalification.evaluate(context, application, bureau_profile)
+        if evaluation:
             conversation.result = evaluation["result"]
             self._change_state(
                 conversation,
@@ -156,24 +244,10 @@ class ConversationOrchestrator:
             )
             return self._save_outbound(
                 conversation.id,
-                self._polish_response(response, text, use_ai=True),
-            )
-
-        missing_field = self.state_service.get_next_required_field(customer, application)
-        if missing_field:
-            self._change_state(
-                conversation,
-                self.state_service.state_for_missing_field(missing_field),
-                f"Falta el campo requerido: {missing_field}",
-            )
-            question = self.responses.question_for_field(
-                missing_field,
-                customer,
-                application,
-            )
-            return self._save_outbound(
-                conversation.id,
-                self._polish_response(question, text, use_ai=False),
+                self._join_answer_and_question(
+                    side_answer,
+                    self._polish_response(response, text, use_ai=True),
+                ),
             )
 
         response = self.responses.build_already_registered_response(customer, application)
@@ -182,15 +256,48 @@ class ConversationOrchestrator:
             self._polish_response(response, text, use_ai=True),
         )
 
+    @staticmethod
+    def _join_answer_and_question(answer: str, question: str) -> str:
+        parts = [part.strip() for part in (answer, question) if (part or "").strip()]
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _conflict_question(field: str, slot: dict) -> str:
+        labels = {
+            "full_name": "nombre",
+            "age": "edad",
+            "employment_status": "situacion laboral",
+            "employment_tenure": "antiguedad",
+            "monthly_income": "ingreso mensual",
+            "monthly_expenses": "gastos mensuales",
+            "existing_debt_payments": "cuotas de deuda",
+            "pep_status": "condicion PEP",
+        }
+        return (
+            f"Tengo dos valores distintos para {labels.get(field, field)}: me indicaste "
+            f"{slot.get('value')} y la fuente simulada registra {slot.get('external_value')}. "
+            "¿Cual debo usar para esta simulacion?"
+        )
+
     def _answer_with_ai(self, conversation_id: int, text: str) -> str:
         response = self._generate_ai_response(conversation_id, text)
         return self._save_outbound(conversation_id, response)
 
-    def _generate_ai_response(self, conversation_id: int, text: str) -> str:
+    def _generate_ai_response(
+        self,
+        conversation_id: int,
+        text: str,
+        allow_credit_bureau: bool = False,
+    ) -> str:
         history = build_ai_history(self.message_repo, conversation_id)
         if history and history[-1].get("role") == "user":
             history = history[:-1]
-        return self.ai.generate_whatsapp_reply(text=text, history=history, db=self.db)
+        return self.ai.generate_whatsapp_reply(
+            text=text,
+            history=history,
+            db=self.db,
+            allow_credit_bureau=allow_credit_bureau,
+        )
 
     def _handoff(self, conversation) -> None:
         self._change_state(
@@ -251,108 +358,3 @@ class ConversationOrchestrator:
                 or ""
             ).strip()
         return self.responses.sanitize(final_response, user_text)
-
-    # Delegaciones pequeñas conservan la API usada por pruebas y extensiones.
-    def _component_responses(self) -> ConversationResponseBuilder:
-        if not hasattr(self, "responses"):
-            self.responses = ConversationResponseBuilder()
-        return self.responses
-
-    def _component_input(self) -> ConversationInputExtractor:
-        if not hasattr(self, "input_extractor"):
-            self.state_service = getattr(self, "state_service", ConversationStateService())
-            self.credit_service = getattr(self, "credit_service", CreditApplicationService())
-            self.input_extractor = ConversationInputExtractor(
-                self.state_service,
-                self.credit_service,
-            )
-        return self.input_extractor
-
-    def _question_for_field(self, field: str, customer, application) -> str:
-        return self._component_responses().question_for_field(field, customer, application)
-
-    def _build_result_response(self, evaluation: dict, customer, application) -> str:
-        return self._component_responses().build_result_response(
-            evaluation,
-            customer,
-            application,
-        )
-
-    def _build_already_registered_response(self, customer, application) -> str:
-        return self._component_responses().build_already_registered_response(
-            customer,
-            application,
-        )
-
-    def _profile_snapshot(self, customer, application) -> str:
-        return self._component_responses().profile_snapshot(customer, application)
-
-    def _human_result_label(self, result: str | None) -> str:
-        return self._component_responses().human_result_label(result)
-
-    def _human_join(self, items: list[str]) -> str:
-        return self._component_responses().human_join(items)
-
-    def _sanitize_response(self, response: str, user_text: str) -> str:
-        return self._component_responses().sanitize(response, user_text)
-
-    def _format_currency(self, value) -> str:
-        return self._component_responses().format_currency(value)
-
-    def _is_handoff_requested(self, text: str, ai_data: dict) -> bool:
-        return ConversationPolicy.is_handoff_requested(text, ai_data)
-
-    def _should_send_welcome(self, conversation, customer, application, text, ai_data):
-        return ConversationPolicy.should_send_welcome(
-            conversation,
-            customer,
-            application,
-            text,
-            ai_data,
-        )
-
-    def _is_plain_greeting(self, text: str) -> bool:
-        return ConversationPolicy.is_plain_greeting(text)
-
-    def _build_welcome_response(self) -> str:
-        return ConversationPolicy.welcome_response()
-
-    def _answer_faq_if_applicable(self, text: str) -> str:
-        return self.faq_service.answer(text)
-
-    def _build_ai_history(self, conversation_id: int, limit: int = 8) -> list[dict]:
-        return build_ai_history(self.message_repo, conversation_id, limit)
-
-    def _enrich_extracted_data(
-        self,
-        conversation,
-        customer,
-        application,
-        text: str,
-        ai_data: dict,
-    ) -> dict:
-        return self._component_input().enrich(
-            conversation,
-            customer,
-            application,
-            text,
-            ai_data,
-        )
-
-    def _expected_field(self, conversation, customer, application) -> str | None:
-        return self._component_input().expected_field(conversation, customer, application)
-
-    def _extract_national_id(self, text: str) -> str | None:
-        return self._component_input().extract_national_id(text)
-
-    def _extract_name(self, text: str) -> str | None:
-        return self._component_input().extract_name(text)
-
-    def _extract_decimal(self, text: str):
-        return self._component_input().extract_decimal(text)
-
-    def _extract_term_months(self, text: str) -> int | None:
-        return self._component_input().extract_term_months(text)
-
-    def _clear_invalid_customer_name(self, customer) -> None:
-        self._component_input().clear_invalid_customer_name(customer)

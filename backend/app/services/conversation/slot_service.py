@@ -103,6 +103,31 @@ class ConversationSlotService:
         context.revision = (context.revision or 0) + 1
         return True
 
+    def verify_slot(
+        self,
+        context,
+        field: str,
+        external_value: Any,
+        source: str = "CREDIT_BUREAU",
+    ) -> bool:
+        serialized = self._serialize(external_value)
+        current = (context.slots or {}).get(field)
+        if current is None:
+            return self.set_slot(context, field, serialized, "VERIFIED", source)
+        if str(current.get("value")) == str(serialized):
+            return self.set_slot(context, field, serialized, "VERIFIED", source)
+
+        slots = dict(context.slots or {})
+        slot = dict(current)
+        slot["status"] = "CONFLICTING"
+        slot["external_value"] = serialized
+        slot["external_source"] = source
+        slot["updated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+        slots[field] = slot
+        context.slots = slots
+        context.revision = (context.revision or 0) + 1
+        return True
+
     @staticmethod
     def value(context, field: str, default=None):
         slot = (context.slots or {}).get(field) or {}
@@ -124,6 +149,13 @@ class ConversationSlotService:
             field: slot.get("value")
             for field, slot in (context.slots or {}).items()
             if slot.get("status") not in {"UNKNOWN", "REVOKED"}
+        }
+
+    def conflicts(self, context) -> dict[str, dict]:
+        return {
+            field: slot
+            for field, slot in (context.slots or {}).items()
+            if slot.get("status") == "CONFLICTING"
         }
 
     def _is_available(self, context, field: str) -> bool:

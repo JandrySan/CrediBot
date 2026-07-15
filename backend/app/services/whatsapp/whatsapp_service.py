@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.config.settings import settings
 from app.services.ai.ai_orchestrator import AIOrchestrator
+from app.services.conversation.history import build_ai_history
 from app.services.conversation.orchestrator import ConversationOrchestrator
 
 
@@ -61,7 +62,7 @@ class WhatsAppService:
             message_type=message_type,
         )
 
-        history = self.orchestrator._build_ai_history(conversation.id)
+        history = build_ai_history(message_repo, conversation.id)
         if history and history[-1].get("role") == "user":
             history = history[:-1]
 

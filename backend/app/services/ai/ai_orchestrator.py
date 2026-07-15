@@ -40,6 +40,7 @@ class AIOrchestrator:
         text: str,
         history: list[dict] | None = None,
         db: Session | None = None,
+        allow_credit_bureau: bool = False,
     ) -> str:
         faq_context = ""
         if db is not None:
@@ -50,6 +51,9 @@ class AIOrchestrator:
             "Responde en espanol, de forma breve y natural. "
             "No inventes datos ni prometas aprobaciones definitivas.\n\n"
             "Tienes acceso a herramientas que puedes usar cuando sea relevante:\n"
+            "- listar_productos_credito: para conocer productos vigentes sin inventarlos.\n"
+            "- consultar_requisitos_producto: para documentos segun producto y ocupacion.\n"
+            "- evaluar_precalificacion: para una simulacion con reglas de la base, sin buro.\n"
             "- calcular_amortizacion: cuando el usuario pregunte por cuotas mensuales, "
             "tablas de pago, intereses, o cuanto pagaria al mes.\n"
             "- consultar_estado_cliente: cuando quiera saber el estado de su solicitud "
@@ -60,6 +64,8 @@ class AIOrchestrator:
             "o cuales son las reglas del credito.\n"
             "- consultar_politica: cuando pregunte sobre requisitos, documentos, "
             "plazos, tasas de interes, o terminos y condiciones.\n\n"
+            "Nunca uses una tasa escrita por el usuario como tasa oficial ni afirmes que una "
+            "simulacion es una aprobacion. No solicites claves, PIN, CVV ni contrasenas.\n\n"
             "Usa estas herramientas cuando el usuario haga preguntas especificas. "
             "No las uses si no es necesario.\n\n"
             "Cuando respondas una consulta del usuario, al final invitalo a seguir "
@@ -94,7 +100,12 @@ class AIOrchestrator:
 
         messages.append({"role": "user", "content": user_text})
 
-        tools_specs = tool_registry.to_openai_specs()
+        tools_specs = [
+            spec
+            for spec in tool_registry.to_openai_specs()
+            if allow_credit_bureau
+            or spec.get("function", {}).get("name") != "consultar_historial_crediticio"
+        ]
 
         if not tools_specs:
             response = self.gateway.generate_chat(messages=messages, temperature=0.4)
@@ -177,7 +188,9 @@ class AIOrchestrator:
         if not tool_def:
             return None
 
-        if tool_def.requires_db and db is not None:
+        if tool_def.requires_db:
+            if db is None:
+                return {"error": "La herramienta requiere una conexion segura a la base de datos."}
             return tool_def.fn(**arguments, db=db)
 
         return tool_def.fn(**arguments)

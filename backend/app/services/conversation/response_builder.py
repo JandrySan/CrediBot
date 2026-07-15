@@ -5,23 +5,55 @@ class ConversationResponseBuilder:
     """Construye respuestas deterministas sin acceder a red ni base de datos."""
 
     def question_for_field(self, field: str, customer, application) -> str:
+        if field == "privacy_consent":
+            return "¿Aceptas el tratamiento informado de tus datos para continuar?"
+        if field == "product_code":
+            return (
+                "¿Buscas un credito de consumo para gastos personales o un microcredito "
+                "para tu negocio?"
+            )
         if field == "national_id":
             return (
                 "Hola, que gusto saludarte. Soy CrediBot y te ayudare con tu "
                 "precalificacion de credito. Para revisar tu perfil en la central de "
                 "riesgo simulada, me compartes tu cedula de 10 digitos?"
             )
+        if field == "bureau_consent":
+            return "¿Autorizas la consulta de tu historial en la central de riesgo simulada?"
         if field == "full_name":
             return (
                 "Gracias. No encontre un nombre asociado a esa cedula en la central "
                 "simulada. Me compartes tu nombre completo?"
             )
+        if field == "age":
+            return "¿Cual es tu edad?"
+        if field == "employment_status":
+            return (
+                "¿Tus ingresos vienen de un empleo, negocio propio, pension, rentas u otra fuente?"
+            )
+        if field == "employment_tenure":
+            return "¿Cuantos meses llevas en tu empleo o actividad actual?"
         if field == "amount":
             return self._amount_question(customer)
         if field == "term_months":
             return self._term_question(application)
         if field == "monthly_income":
             return self._income_question(application)
+        if field == "monthly_expenses":
+            return (
+                "¿Cuanto suman aproximadamente tus gastos mensuales del hogar, sin incluir "
+                "las cuotas de otras deudas?"
+            )
+        if field == "existing_debt_payments":
+            return (
+                "¿Cuanto pagas al mes por tarjetas, prestamos u otras deudas? "
+                "Si no tienes, responde 0."
+            )
+        if field == "pep_status":
+            return (
+                "¿Eres una persona expuesta politicamente (PEP), familiar o asociado cercano "
+                "de una? Puedes responder si, no o no estoy seguro."
+            )
         return "Cuentame un poco mas para poder ayudarte mejor con tu solicitud."
 
     @staticmethod
@@ -62,13 +94,20 @@ class ConversationResponseBuilder:
         profile_details = self.profile_snapshot(customer, application)
         result_label = self.human_result_label(evaluation.get("result"))
         reason = (evaluation.get("reason") or "").strip()
+        installment = evaluation.get("estimated_installment")
+        installment_text = (
+            f" La cuota mensual estimada es {self.format_currency(installment)}."
+            if installment is not None
+            else ""
+        )
         prefix = (
             f"Listo, con la informacion que me compartiste ({profile_details}), "
             if profile_details
             else "Listo, "
         )
         return (
-            f"{prefix}tu resultado preliminar es {result_label}. Motivo: {reason}. "
+            f"{prefix}tu resultado preliminar es {result_label}.{installment_text} "
+            f"Motivo: {reason}. "
             "Si deseas, tambien puedo derivarte con un asesor humano."
         )
 
@@ -106,8 +145,14 @@ class ConversationResponseBuilder:
         normalized = (result or "").strip().upper()
         labels = {
             "PREAPROBADO": "preaprobado",
+            "PREQUALIFIED": "precalificado de forma informativa",
             "OBSERVADO": "observado",
             "RECHAZADO": "rechazado",
+            "NOT_PREQUALIFIED": "no precalificado por el momento",
+            "MANUAL_REVIEW": "pendiente de revision humana",
+            "NEEDS_INFORMATION": "pendiente de informacion o verificacion",
+            "SIMULATION_ONLY": "simulacion informativa",
+            "ERROR": "no disponible por el momento",
         }
         return labels.get(normalized, normalized.lower() if normalized else "sin resultado")
 
