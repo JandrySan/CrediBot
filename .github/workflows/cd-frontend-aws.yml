@@ -84,20 +84,23 @@ jobs:
 
       - name: Invalidar CloudFront
         run: |
-          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+          aws cloudfront create-invalidation \
             --distribution-id "$AWS_CLOUDFRONT_DISTRIBUTION_ID" \
-            --paths "/*" \
-            --query 'Invalidation.Id' \
-            --output text)
-          aws cloudfront wait invalidation-completed \
-            --distribution-id "$AWS_CLOUDFRONT_DISTRIBUTION_ID" \
-            --id "$INVALIDATION_ID"
+            --paths "/*" >/dev/null
 
       - name: Verificar frontend publicado
         working-directory: .
         run: |
-          HTML=$(curl --fail --silent --show-error "$FRONTEND_PUBLIC_URL")
-          echo "$HTML" | grep -q '<div id="root"></div>'
+          EXPECTED_ASSET=$(grep -o 'assets/index-[^"[:space:]]*\.js' frontend/dist/index.html)
+          for attempt in $(seq 1 30); do
+            HTML=$(curl --fail --silent --show-error "$FRONTEND_PUBLIC_URL")
+            if echo "$HTML" | grep -q "$EXPECTED_ASSET"; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::CloudFront no publico el asset esperado: $EXPECTED_ASSET"
+          exit 1
 
       - name: Resumen del despliegue
         working-directory: .
