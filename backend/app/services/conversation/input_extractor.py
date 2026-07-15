@@ -166,7 +166,7 @@ class ConversationInputExtractor:
             return
 
         bare_name = self.extract_name(text)
-        if bare_name and (pending_field == "full_name" or self._looks_like_bare_name(text)):
+        if bare_name and pending_field == "full_name" and self._looks_like_bare_name(text):
             data["full_name"] = bare_name
             return
 

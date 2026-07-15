@@ -165,6 +165,16 @@ def test_contextual_name_filter_discards_ai_hallucination_from_credit_request():
     assert "full_name" not in data
 
 
+def test_contextual_name_filter_does_not_treat_product_answer_as_name():
+    extractor = _input()
+    data = extractor.enrich_pending_field(
+        "Es para gastos personales",
+        "product_code",
+        {"full_name": "Es Para Gastos Personales"},
+    )
+    assert "full_name" not in data
+
+
 def test_contextual_name_filter_accepts_bare_or_explicit_person_name():
     extractor = _input()
     bare = extractor.enrich_pending_field(
