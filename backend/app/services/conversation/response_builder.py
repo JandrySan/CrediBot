@@ -140,6 +140,36 @@ class ConversationResponseBuilder:
             "pedirme una explicacion o escribir asesor."
         )
 
+    def build_post_result_help_response(self, application) -> str:
+        result_label = self.human_result_label(getattr(application, "result", None))
+        return (
+            f"Ya tengo una simulacion registrada con resultado: {result_label}. "
+            "Puedo explicarte el motivo, corregir monto, plazo o ingresos, "
+            "o pasarte con un asesor."
+        )
+
+    def build_result_explanation_response(self, application) -> str:
+        result_label = self.human_result_label(getattr(application, "result", None))
+        reason = (getattr(application, "reason", None) or "").strip()
+        details = []
+        if getattr(application, "amount", None) is not None:
+            details.append(f"monto {self.format_currency(application.amount)}")
+        if getattr(application, "term_months", None) is not None:
+            details.append(f"plazo {application.term_months} meses")
+        if getattr(application, "monthly_income", None) is not None:
+            details.append(f"ingreso mensual {self.format_currency(application.monthly_income)}")
+
+        lines = [f"El resultado salio {result_label}."]
+        if details:
+            lines.append(f"Datos usados: {self.human_join(details)}.")
+        if reason:
+            lines.append(f"Motivo: {reason}")
+        lines.append(
+            "Puedes corregir un dato escribiendo, por ejemplo: el plazo es 24 meses, "
+            "o escribir asesor para que una persona revise el caso."
+        )
+        return "\n".join(lines)
+
     @classmethod
     def _friendly_result_reasons(cls, evaluation: dict) -> list[str]:
         labels = {

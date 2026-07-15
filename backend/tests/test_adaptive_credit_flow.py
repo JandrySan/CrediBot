@@ -124,6 +124,44 @@ def test_adaptive_flow_accepts_short_answers_and_corrections_without_restarting(
         assert db.scalar(select(func.count(CreditDecision.id))) == 2
 
 
+def test_post_result_questions_do_not_repeat_the_full_simulation():
+    with _rollback_session() as db:
+        _seed_product_and_policy(db)
+        orchestrator = ConversationOrchestrator(db)
+        _disable_external_ai(orchestrator)
+        phone = "+593980999993"
+
+        orchestrator.handle_text_message(phone, "Quiero un prestamo")
+        orchestrator.handle_text_message(phone, "si")
+        orchestrator.handle_text_message(phone, "consumo")
+        orchestrator.handle_text_message(phone, "9900000003")
+        orchestrator.handle_text_message(phone, "no")
+        orchestrator.handle_text_message(phone, "Persona Sintetica Demo")
+        orchestrator.handle_text_message(phone, "35")
+        orchestrator.handle_text_message(phone, "empleado")
+        orchestrator.handle_text_message(phone, "24 meses")
+        orchestrator.handle_text_message(phone, "5000")
+        orchestrator.handle_text_message(phone, "36")
+        orchestrator.handle_text_message(phone, "1800")
+        orchestrator.handle_text_message(phone, "700")
+        orchestrator.handle_text_message(phone, "100")
+        result = orchestrator.handle_text_message(phone, "no")
+
+        assert "simulacion informativa" in result.lower()
+        assert db.scalar(select(func.count(CreditDecision.id))) == 1
+
+        explanation = orchestrator.handle_text_message(phone, "Que paso")
+        assert "motivo:" in explanation.lower()
+        assert "datos usados" in explanation.lower()
+        assert "ya hice la simulacion" not in explanation.lower()
+        assert db.scalar(select(func.count(CreditDecision.id))) == 1
+
+        greeting = orchestrator.handle_text_message(phone, "Hola")
+        assert "ya tengo una simulacion registrada" in greeting.lower()
+        assert "ya hice la simulacion" not in greeting.lower()
+        assert db.scalar(select(func.count(CreditDecision.id))) == 1
+
+
 def test_credit_bureau_tool_is_hidden_until_authorization():
     class Gateway:
         def __init__(self):

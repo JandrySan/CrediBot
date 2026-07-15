@@ -103,6 +103,36 @@ class ConversationPolicy:
         normalized = (text or "").lower().strip()
         return bool(normalized) and any(marker in normalized for marker in cls.FAQ_MARKERS)
 
+    @classmethod
+    def is_result_explanation_requested(cls, text: str) -> bool:
+        raw = (text or "").strip().lower()
+        if raw and all(character in {"?", "¿", " "} for character in raw):
+            return True
+
+        normalized = "".join(
+            char
+            for char in unicodedata.normalize("NFD", raw)
+            if unicodedata.category(char) != "Mn"
+        )
+        normalized = re.sub(r"[^a-z\s]", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        if not normalized:
+            return False
+
+        markers = (
+            "que paso",
+            "q paso",
+            "por que",
+            "porque",
+            "motivo",
+            "razon",
+            "explica",
+            "explicacion",
+            "no precalificado",
+            "observado",
+        )
+        return any(marker in normalized for marker in markers)
+
     @staticmethod
     def welcome_response() -> str:
         return (

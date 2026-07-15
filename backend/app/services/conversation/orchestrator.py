@@ -186,6 +186,7 @@ class ConversationOrchestrator:
                 conversation.id,
                 ConversationPolicy.welcome_response(),
             )
+        before_slots = self.slots.snapshot(context)
         self.adaptive_flow.apply_entities(
             context,
             customer,
@@ -201,6 +202,7 @@ class ConversationOrchestrator:
             context.pending_field = None
         bureau_profile = self.adaptive_flow.hydrate_from_bureau(context, customer)
         self.adaptive_flow.apply_entities(context, customer, application, {})
+        slots_changed = before_slots != self.slots.snapshot(context)
 
         side_answer = ""
         if ai_data.get("intent") == "consulta":
@@ -220,6 +222,7 @@ class ConversationOrchestrator:
             text,
             bureau_profile,
             side_answer,
+            slots_changed,
         )
 
     def _continue_credit_flow(
@@ -231,6 +234,7 @@ class ConversationOrchestrator:
         text: str,
         bureau_profile: dict | None,
         side_answer: str = "",
+        slots_changed: bool = False,
     ) -> str:
         if self.slots.status(context, "full_name") == "PROPOSED":
             context.pending_field = "full_name"
@@ -288,6 +292,19 @@ class ConversationOrchestrator:
                 self._join_answer_and_question(side_answer, question),
             )
 
+        if (
+            conversation.current_state == ConversationState.SHOW_RESULT.value
+            and application.result
+            and not slots_changed
+        ):
+            response = self._post_result_response(
+                text,
+                customer,
+                application,
+                side_answer,
+            )
+            return self._save_outbound(conversation.id, response)
+
         evaluation = self.prequalification.evaluate(context, application, bureau_profile)
         if evaluation:
             conversation.result = evaluation["result"]
@@ -308,6 +325,20 @@ class ConversationOrchestrator:
 
         response = self.responses.build_already_registered_response(customer, application)
         return self._save_outbound(conversation.id, response)
+
+    def _post_result_response(
+        self,
+        text: str,
+        customer,
+        application,
+        side_answer: str = "",
+    ) -> str:
+        if ConversationPolicy.is_result_explanation_requested(text):
+            return self.responses.build_result_explanation_response(application)
+        if ConversationPolicy.is_plain_greeting(text):
+            return self.responses.build_post_result_help_response(application)
+        fallback = self.responses.build_already_registered_response(customer, application)
+        return self._join_answer_and_question(side_answer, fallback)
 
     @staticmethod
     def _join_answer_and_question(answer: str, question: str) -> str:
