@@ -17,7 +17,7 @@ export function SettingsPage() {
     { label: "Webhook WhatsApp", value: `${API_BASE_URL}/webhook/whatsapp`, icon: <WebhookIcon />, ok: true, detail: "Ruta disponible" },
   ];
   const checklist = [
-    { title: "Backend activo", description: "FastAPI debe responder en /health antes de probar WhatsApp.", done: apiOnline },
+    { title: "Backend activo", description: "FastAPI debe responder en /api/health antes de probar WhatsApp.", done: apiOnline },
     { title: "Twilio Sandbox", description: "When a message comes in debe apuntar al webhook con POST.", done: true },
     { title: "Audio opcional", description: "Para notas de voz, activa el audio y configura la URL pública.", done: true },
     { title: "FAQs cargadas", description: "Mantener políticas y requisitos actualizados mejora las respuestas.", done: true },

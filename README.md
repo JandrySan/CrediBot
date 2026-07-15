@@ -245,7 +245,8 @@ Rutas frontend:
 App:
 
 - `GET /`
-- `GET /health`
+- `GET /health` (contenedor/local)
+- `GET /api/health` (ruta publica a traves de CloudFront)
 
 Autenticacion:
 

@@ -34,6 +34,7 @@ Recursos confirmados:
 Rutas productivas:
 
 - Dashboard: `https://d30z3dsmpm7ctx.cloudfront.net`
+- Health backend: `https://d30z3dsmpm7ctx.cloudfront.net/api/health`
 - API: `https://d30z3dsmpm7ctx.cloudfront.net/api/*`
 - WebSocket: `wss://d30z3dsmpm7ctx.cloudfront.net/ws/dashboard`
 - Webhook Twilio: `https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp`
@@ -128,6 +129,12 @@ Variables/secrets requeridos:
 
 Twilio, Groq y la base de datos no se duplican en GitHub Secrets; sus valores
 permanecen exclusivamente en AWS Secrets Manager.
+
+El rol `github-actions-credibot-deploy` necesita el permiso minimo de
+Secrets Manager definido en `docs/iam-github-actions-secrets-policy.json`.
+El rol de ejecucion de la task de ECS tambien debe permitir
+`secretsmanager:GetSecretValue` para `arn:aws:secretsmanager:us-east-1:514090178790:secret:credibot/*`;
+ECS usa ese permiso al inyectar los secretos en el contenedor.
 
 ## Secrets de aplicacion
 
