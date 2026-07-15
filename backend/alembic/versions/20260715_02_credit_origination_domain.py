@@ -80,16 +80,35 @@ def downgrade() -> None:
         if sa.inspect(bind).has_table(table):
             op.drop_table(table)
 
+    application_indexes = {
+        index["name"] for index in sa.inspect(bind).get_indexes("credit_applications")
+    }
+    for index_name in (
+        "ix_credit_applications_product_id",
+        "ix_credit_applications_status",
+    ):
+        if index_name in application_indexes:
+            op.drop_index(index_name, table_name="credit_applications")
+
     application_columns = _column_names(bind, "credit_applications")
-    for column in (
+    removable_columns = [
+        column
+        for column in (
         "updated_at",
         "status",
         "amortization_type",
         "requested_payment_day",
         "purpose",
         "product_id",
-    ):
-        if column in application_columns:
+        )
+        if column in application_columns
+    ]
+    if bind.dialect.name == "sqlite" and removable_columns:
+        with op.batch_alter_table("credit_applications") as batch_op:
+            for column in removable_columns:
+                batch_op.drop_column(column)
+    else:
+        for column in removable_columns:
             op.drop_column("credit_applications", column)
 
     for table in (
@@ -232,7 +251,7 @@ def _create_policy_tables(bind) -> None:
 def _upgrade_credit_applications(bind) -> None:
     columns = _column_names(bind, "credit_applications")
     additions = (
-        ("product_id", sa.Column("product_id", sa.Integer(), sa.ForeignKey("credit_products.id"))),
+        ("product_id", sa.Column("product_id", sa.Integer())),
         ("purpose", sa.Column("purpose", sa.String(160))),
         ("requested_payment_day", sa.Column("requested_payment_day", sa.Integer())),
         ("amortization_type", sa.Column("amortization_type", sa.String(20))),
@@ -242,9 +261,38 @@ def _upgrade_credit_applications(bind) -> None:
         ),
         ("updated_at", sa.Column("updated_at", sa.DateTime(timezone=True))),
     )
-    for name, column in additions:
-        if name not in columns:
+    pending_additions = [column for name, column in additions if name not in columns]
+    if bind.dialect.name == "sqlite" and pending_additions:
+        with op.batch_alter_table("credit_applications") as batch_op:
+            for column in pending_additions:
+                batch_op.add_column(column)
+    else:
+        for column in pending_additions:
             op.add_column("credit_applications", column)
+
+    foreign_keys = sa.inspect(bind).get_foreign_keys("credit_applications")
+    product_fk_exists = any(
+        foreign_key.get("constrained_columns") == ["product_id"]
+        and foreign_key.get("referred_table") == "credit_products"
+        for foreign_key in foreign_keys
+    )
+    if not product_fk_exists:
+        if bind.dialect.name == "sqlite":
+            with op.batch_alter_table("credit_applications") as batch_op:
+                batch_op.create_foreign_key(
+                    "fk_credit_applications_product_id",
+                    "credit_products",
+                    ["product_id"],
+                    ["id"],
+                )
+        else:
+            op.create_foreign_key(
+                "fk_credit_applications_product_id",
+                "credit_applications",
+                "credit_products",
+                ["product_id"],
+                ["id"],
+            )
     op.create_index(
         "ix_credit_applications_product_id",
         "credit_applications",
@@ -524,4 +572,3 @@ def _column_names(bind, table_name: str) -> set[str]:
     if not sa.inspect(bind).has_table(table_name):
         return set()
     return {column["name"] for column in sa.inspect(bind).get_columns(table_name)}
-
