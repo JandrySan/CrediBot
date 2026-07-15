@@ -133,6 +133,9 @@ permanecen exclusivamente en AWS Secrets Manager.
 
 El rol `github-actions-credibot-deploy` necesita el permiso minimo de
 Secrets Manager definido en `docs/iam-github-actions-secrets-policy.json`.
+Sus permisos de publicacion en ECR y actualizacion de ECS se definen en
+`docs/iam-github-actions-ecr-ecs-policy.json`; incluyen la descarga de la
+imagen para ejecutar las migraciones antes de actualizar el servicio.
 El rol de ejecucion de la task de ECS necesita la politica de
 `docs/iam-ecs-secrets-policy.json`; ECS usa ese permiso al inyectar los
 secretos en el contenedor.
