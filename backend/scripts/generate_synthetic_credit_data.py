@@ -9,7 +9,7 @@ from datetime import date
 from pathlib import Path
 
 import psycopg2
-from psycopg2.extras import execute_values
+from psycopg2.extras import execute_values, register_uuid
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
@@ -59,6 +59,7 @@ def main() -> int:
         raise SystemExit("El generador masivo requiere PostgreSQL.")
 
     batch_id = uuid.uuid5(SYNTHETIC_NAMESPACE, args.batch_key)
+    register_uuid()
     generator = SyntheticCreditDataGenerator(
         batch_key=args.batch_key,
         batch_id=batch_id,
