@@ -3,8 +3,15 @@ def register_builtin_tools() -> None:
     from app.services.tools import (
         credit_bureau_tools,
         customer_tools,
+        evaluation_tools,
         financial_tools,
         policy_tools,
     )
 
-    _ = (credit_bureau_tools, customer_tools, financial_tools, policy_tools)
+    _ = (
+        credit_bureau_tools,
+        customer_tools,
+        evaluation_tools,
+        financial_tools,
+        policy_tools,
+    )
