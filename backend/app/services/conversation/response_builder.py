@@ -4,7 +4,13 @@ import re
 class ConversationResponseBuilder:
     """Construye respuestas deterministas sin acceder a red ni base de datos."""
 
-    def question_for_field(self, field: str, customer, application) -> str:
+    def question_for_field(
+        self,
+        field: str,
+        customer,
+        application,
+        suggested_value=None,
+    ) -> str:
         if field == "privacy_consent":
             return "¿Aceptas el tratamiento informado de tus datos para continuar?"
         if field == "product_code":
@@ -21,10 +27,12 @@ class ConversationResponseBuilder:
         if field == "bureau_consent":
             return "¿Autorizas la consulta de tu historial en la central de riesgo simulada?"
         if field == "full_name":
-            return (
-                "Gracias. No encontre un nombre asociado a esa cedula en la central "
-                "simulada. Me compartes tu nombre completo?"
-            )
+            if suggested_value:
+                return (
+                    f"Encontre el nombre {suggested_value}. ¿Es correcto? "
+                    "Responde si o escribe tu nombre completo."
+                )
+            return "¿Cual es tu nombre completo? Por ejemplo: Maria Lopez."
         if field == "age":
             return "¿Cual es tu edad?"
         if field == "employment_status":
@@ -55,6 +63,13 @@ class ConversationResponseBuilder:
                 "de una? Puedes responder si, no o no estoy seguro."
             )
         return "Cuentame un poco mas para poder ayudarte mejor con tu solicitud."
+
+    @staticmethod
+    def name_correction_question() -> str:
+        return (
+            "Gracias por corregirme. ¿Cual es tu nombre completo? "
+            "Puedes escribir, por ejemplo: Me llamo Maria Lopez."
+        )
 
     @staticmethod
     def _amount_question(customer) -> str:

@@ -128,6 +128,23 @@ class ConversationSlotService:
         context.revision = (context.revision or 0) + 1
         return True
 
+    def reject_slot(
+        self,
+        context,
+        field: str,
+        source: str = "USER_MESSAGE",
+    ) -> bool:
+        current = (context.slots or {}).get(field)
+        if current is None:
+            return False
+        return self.set_slot(
+            context,
+            field,
+            current.get("value"),
+            status="REJECTED",
+            source=source,
+        )
+
     @staticmethod
     def value(context, field: str, default=None):
         slot = (context.slots or {}).get(field) or {}

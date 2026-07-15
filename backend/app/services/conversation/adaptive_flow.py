@@ -58,10 +58,39 @@ class AdaptiveCreditFlow:
             context.active_goal = "INFORMATION_ONLY"
         return True
 
+    def handle_pending_name_confirmation(self, context, customer, text: str) -> str | None:
+        if context.pending_field != "full_name":
+            return None
+        if self.slots.status(context, "full_name") != "PROPOSED":
+            return None
+
+        answer = self._consent_answer(text)
+        if answer is None:
+            return None
+        if answer == "DECLINED":
+            self.slots.reject_slot(context, "full_name")
+            customer.full_name = None
+            self.db.flush()
+            return "REJECTED"
+
+        confirmed_name = self.slots.value(context, "full_name")
+        self.slots.set_slot(
+            context,
+            "full_name",
+            confirmed_name,
+            "CONFIRMED",
+            "USER_CONFIRMATION",
+        )
+        customer.full_name = confirmed_name
+        context.pending_field = None
+        self.db.flush()
+        return "CONFIRMED"
+
     def apply_entities(self, context, customer, application, entities: dict) -> None:
         self.slots.apply_entities(context, entities)
         customer.national_id = self.slots.value(context, "national_id") or customer.national_id
-        customer.full_name = self.slots.value(context, "full_name") or customer.full_name
+        if self.slots.status(context, "full_name") in {"CONFIRMED", "VERIFIED"}:
+            customer.full_name = self.slots.value(context, "full_name") or customer.full_name
 
         application.amount = self._optional_decimal(self.slots.value(context, "amount"))
         application.term_months = self._optional_int(self.slots.value(context, "term_months"))
@@ -106,7 +135,6 @@ class AdaptiveCreditFlow:
             return None
 
         mappings = {
-            "full_name": "full_name",
             "age": "age",
             "employment_status": "employment_status",
             "monthly_income": "reported_monthly_income",
@@ -119,6 +147,7 @@ class AdaptiveCreditFlow:
             "max_days_past_due": "max_days_past_due",
             "recent_inquiries_6m": "recent_inquiries_6m",
         }
+        self._merge_bureau_name(context, bureau.get("full_name"))
         for slot_name, bureau_name in mappings.items():
             value = bureau.get(bureau_name)
             if value is not None:
@@ -132,9 +161,31 @@ class AdaptiveCreditFlow:
         )
         if tenure is not None:
             self.slots.verify_slot(context, "employment_tenure", tenure)
-        if not customer.full_name and bureau.get("full_name"):
-            customer.full_name = bureau["full_name"]
         return bureau
+
+    def _merge_bureau_name(self, context, bureau_name) -> None:
+        if not bureau_name:
+            return
+        current = (context.slots or {}).get("full_name")
+        if current is None:
+            self.slots.set_slot(
+                context,
+                "full_name",
+                bureau_name,
+                "PROPOSED",
+                "CREDIT_BUREAU",
+            )
+            return
+
+        current_value = str(current.get("value") or "")
+        if current.get("status") in {"PROPOSED", "REJECTED"}:
+            return
+        if current_value == str(bureau_name):
+            self.slots.verify_slot(context, "full_name", bureau_name)
+            return
+        if current.get("source") in {"USER_MESSAGE", "USER_CONFIRMATION"}:
+            return
+        self.slots.verify_slot(context, "full_name", bureau_name)
 
     @staticmethod
     def privacy_question() -> str:

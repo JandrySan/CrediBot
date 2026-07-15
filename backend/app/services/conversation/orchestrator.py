@@ -81,6 +81,7 @@ class ConversationOrchestrator:
         context = self.context_repo.get_or_create(conversation.id)
         application = self.application_repo.get_or_create_latest(customer.id)
         self.input_extractor.clear_invalid_customer_name(customer)
+        self._clear_invalid_context_name(context, customer)
         self._save_message(conversation.id, "INBOUND", text, inbound_message_type)
 
         if settings.AI_ONLY_MODE:
@@ -122,6 +123,22 @@ class ConversationOrchestrator:
                 self.adaptive_flow.privacy_question(),
             )
 
+        name_confirmation = self.adaptive_flow.handle_pending_name_confirmation(
+            context,
+            customer,
+            text,
+        )
+        if name_confirmation == "REJECTED":
+            self._change_state(
+                conversation,
+                ConversationState.ASK_NAME.value,
+                "El usuario rechazo el nombre sugerido",
+            )
+            return self._save_outbound(
+                conversation.id,
+                self.responses.name_correction_question(),
+            )
+
         ai_data = self.input_extractor.enrich(
             conversation,
             customer,
@@ -140,6 +157,20 @@ class ConversationOrchestrator:
             extracted_data=ai_data,
             model_used=self.ai.get_model_name(),
         )
+
+        if self.input_extractor.is_name_denial(text) and not ai_data.get("full_name"):
+            self.slots.reject_slot(context, "full_name")
+            customer.full_name = None
+            context.pending_field = "full_name"
+            self._change_state(
+                conversation,
+                ConversationState.ASK_NAME.value,
+                "El usuario corrigio el nombre registrado",
+            )
+            return self._save_outbound(
+                conversation.id,
+                self.responses.name_correction_question(),
+            )
 
         if ConversationPolicy.is_handoff_requested(text, ai_data):
             self._handoff(conversation)
@@ -217,7 +248,17 @@ class ConversationOrchestrator:
             question = (
                 self.adaptive_flow.bureau_question()
                 if missing_field == "bureau_consent"
-                else self.responses.question_for_field(missing_field, customer, application)
+                else self.responses.question_for_field(
+                    missing_field,
+                    customer,
+                    application,
+                    suggested_value=(
+                        self.slots.value(context, "full_name")
+                        if missing_field == "full_name"
+                        and self.slots.status(context, "full_name") == "PROPOSED"
+                        else None
+                    ),
+                )
             )
             self._change_state(
                 conversation,
@@ -307,6 +348,12 @@ class ConversationOrchestrator:
         )
         conversation.status = "HANDOFF"
         self.db.flush()
+
+    def _clear_invalid_context_name(self, context, customer) -> None:
+        slot_name = self.slots.value(context, "full_name")
+        if slot_name and not self.credit_service.is_valid_person_name(str(slot_name)):
+            self.slots.reject_slot(context, "full_name", source="SYSTEM_VALIDATION")
+            customer.full_name = None
 
     def _save_message(
         self,

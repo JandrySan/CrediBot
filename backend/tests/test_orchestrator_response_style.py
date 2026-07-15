@@ -60,8 +60,21 @@ def test_question_for_name_is_cordial_and_requests_full_name():
     customer = SimpleNamespace(full_name=None, national_id="9990000999")
     application = SimpleNamespace(amount=None, term_months=None, monthly_income=None)
     text = _responses().question_for_field("full_name", customer, application)
-    assert "no encontre" in text.lower()
     assert "nombre completo" in text.lower()
+    assert "Maria Lopez" in text
+
+
+def test_bureau_name_is_presented_for_confirmation():
+    customer = SimpleNamespace(full_name=None, national_id="9990000999")
+    application = SimpleNamespace(amount=None, term_months=None, monthly_income=None)
+    text = _responses().question_for_field(
+        "full_name",
+        customer,
+        application,
+        suggested_value="Juan Perez",
+    )
+    assert "Juan Perez" in text
+    assert "Es correcto" in text
 
 
 def test_question_for_amount_mentions_pleasure_and_name():
@@ -93,7 +106,56 @@ def test_preference_text_is_not_valid_person_name():
 def test_extract_name_rejects_audio_preference_text():
     extractor = _input()
     assert extractor.extract_name("Respondem por audio") is None
+    assert extractor.extract_name("Simulador de Credito") is None
+    assert extractor.extract_name("Quiero continuar") is None
     assert extractor.extract_name("Carlos Pico") == "Carlos Pico"
+
+
+def test_contextual_name_filter_discards_ai_hallucination_from_credit_request():
+    extractor = _input()
+    data = extractor.enrich_pending_field(
+        "Ahora quiero continuar con una simulacion para saber si soy apto",
+        None,
+        {"full_name": "Simulador de Credito", "intent": "credito"},
+    )
+    assert "full_name" not in data
+
+
+def test_contextual_name_filter_accepts_bare_or_explicit_person_name():
+    extractor = _input()
+    bare = extractor.enrich_pending_field(
+        "Maria Fernanda Lopez",
+        "full_name",
+        {"full_name": None},
+    )
+    explicit = extractor.enrich_pending_field(
+        "Me llamo Maria Fernanda Lopez y quiero un credito",
+        None,
+        {"full_name": "Credito Personal"},
+    )
+    assert bare["full_name"] == "Maria Fernanda Lopez"
+    assert explicit["full_name"] == "Maria Fernanda Lopez"
+
+
+def test_name_denial_is_not_interpreted_as_a_new_name():
+    extractor = _input()
+    data = extractor.enrich_pending_field(
+        "No me llamo yo simulador de credito",
+        "full_name",
+        {"full_name": "Simulador de Credito"},
+    )
+    assert extractor.is_name_denial("No me llamo yo simulador de credito")
+    assert "full_name" not in data
+
+
+def test_name_denial_can_include_the_real_correction():
+    extractor = _input()
+    data = extractor.enrich_pending_field(
+        "No me llamo Juan Perez; me llamo Maria Lopez",
+        "full_name",
+        {"full_name": "Juan Perez"},
+    )
+    assert data["full_name"] == "Maria Lopez"
 
 
 def test_person_name_does_not_trigger_handoff():

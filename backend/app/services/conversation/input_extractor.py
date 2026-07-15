@@ -57,6 +57,7 @@ class ConversationInputExtractor:
 
     def enrich_pending_field(self, text: str, field: str | None, data: dict) -> dict:
         enriched = dict(data or {})
+        self._sanitize_name_entity(text, field, enriched)
         if not field or enriched.get(field) is not None:
             return enriched
         numeric_fields = {
@@ -153,12 +154,63 @@ class ConversationInputExtractor:
             result["pep_status"] = "NOT_PEP"
         elif "soy pep" in normalized:
             result["pep_status"] = "PEP"
-        name_match = re.search(r"(?:me llamo|mi nombre es)\s+(.+)", text, flags=re.IGNORECASE)
-        if name_match:
-            name = self.extract_name(name_match.group(1))
-            if name:
-                result["full_name"] = name
+        explicit_name = self.extract_explicit_name(text)
+        if explicit_name:
+            result["full_name"] = explicit_name
         return result
+
+    def _sanitize_name_entity(self, text: str, pending_field: str | None, data: dict) -> None:
+        explicit_name = self.extract_explicit_name(text)
+        if explicit_name:
+            data["full_name"] = explicit_name
+            return
+
+        bare_name = self.extract_name(text)
+        if bare_name and (pending_field == "full_name" or self._looks_like_bare_name(text)):
+            data["full_name"] = bare_name
+            return
+
+        data.pop("full_name", None)
+
+    def extract_explicit_name(self, text: str) -> str | None:
+        value = (text or "").strip()
+        candidates: list[str] = []
+        for match in re.finditer(r"(?:me llamo|mi nombre es)\s+([^,.;!?]+)", value, re.I):
+            prefix = value[max(0, match.start() - 4) : match.start()].lower()
+            if re.search(r"no\s+$", prefix):
+                continue
+            candidates.append(match.group(1))
+
+        soy_match = re.match(r"\s*soy\s+([^,.;!?]+)", value, re.I)
+        if soy_match:
+            candidates.append(soy_match.group(1))
+
+        for candidate in reversed(candidates):
+            candidate = re.split(
+                r"\s+y\s+(?=quiero|necesito|busco|deseo|solicito|tengo|gano|trabajo)",
+                candidate,
+                maxsplit=1,
+                flags=re.I,
+            )[0]
+            name = self.extract_name(candidate)
+            if name:
+                return name
+        return None
+
+    @staticmethod
+    def is_name_denial(text: str) -> bool:
+        normalized = (text or "").lower()
+        return bool(
+            re.search(
+                r"\b(?:no\s+me\s+llamo|ese\s+no\s+es\s+mi\s+nombre|"
+                r"mi\s+nombre\s+no\s+es|no\s+es\s+mi\s+nombre)\b",
+                normalized,
+            )
+        )
+
+    @staticmethod
+    def _looks_like_bare_name(text: str) -> bool:
+        return not bool(re.search(r"[,.;!?\d]", (text or "").strip()))
 
     def expected_field(self, conversation, customer, application) -> str | None:
         by_state = {
