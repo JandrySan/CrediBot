@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, Form
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.schemas.dashboard import (
     ActionResponse,
+    AdvisorReplyRequest,
     CleanupResponse,
+    ConversationCloseRequest,
     ConversationMessage,
     ConversationSummary,
 )
@@ -49,16 +51,16 @@ def take_conversation(
 @router.post("/{conversation_id}/reply", response_model=ActionResponse)
 async def reply_conversation(
     conversation_id: int,
-    message: str = Form(...),
+    payload: AdvisorReplyRequest,
     db: Session = Depends(get_db),
 ) -> dict:
-    result = DashboardConversationService(db).reply(conversation_id, message)
+    result = DashboardConversationService(db).reply(conversation_id, payload.message)
     if result.get("success"):
         await manager.broadcast(
             {
                 "type": "AGENT_REPLY",
                 "conversation_id": conversation_id,
-                "message": message,
+                "message": payload.message,
             }
         )
     return result
@@ -67,11 +69,14 @@ async def reply_conversation(
 @router.post("/{conversation_id}/close", response_model=ActionResponse)
 async def close_conversation(
     conversation_id: int,
-    resolution: str = Form(default="RESOLVED"),
-    note: str = Form(default=""),
+    payload: ConversationCloseRequest,
     db: Session = Depends(get_db),
 ) -> dict:
-    result = DashboardConversationService(db).close(conversation_id, resolution, note)
+    result = DashboardConversationService(db).close(
+        conversation_id,
+        payload.resolution,
+        payload.note,
+    )
     if result.get("success"):
         await manager.broadcast(
             {

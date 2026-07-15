@@ -27,12 +27,9 @@ export const ConversationService = {
   },
 
   async replyConversation(conversationId: number, message: string) {
-    const formData = new FormData();
-    formData.append("message", message);
-
     const response = await api.post(
       `/api/dashboard/conversations/${conversationId}/reply`,
-      formData
+      { message }
     );
 
     return response.data;
@@ -43,13 +40,9 @@ export const ConversationService = {
     resolution: ConversationResolution,
     note = ""
   ) {
-    const formData = new FormData();
-    formData.append("resolution", resolution);
-    formData.append("note", note);
-
     const response = await api.post(
       `/api/dashboard/conversations/${conversationId}/close`,
-      formData
+      { resolution, note }
     );
 
     return response.data;

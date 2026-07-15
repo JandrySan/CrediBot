@@ -74,7 +74,7 @@ def test_advisor_reply_is_not_saved_when_twilio_fails():
     ):
         response = client.post(
             f"/api/dashboard/conversations/{conversation_id}/reply",
-            data={"message": "Hola, soy tu asesor."},
+            json={"message": "Hola, soy tu asesor."},
         )
 
     assert response.status_code == 200
@@ -110,7 +110,7 @@ def test_advisor_reply_is_saved_after_twilio_success():
     ):
         response = client.post(
             f"/api/dashboard/conversations/{conversation_id}/reply",
-            data={"message": "Hola, soy tu asesor."},
+            json={"message": "Hola, soy tu asesor."},
         )
 
     assert response.status_code == 200
@@ -133,3 +133,16 @@ def test_advisor_reply_is_saved_after_twilio_success():
         assert saved[0].content == "Hola, soy tu asesor."
     finally:
         db.close()
+
+
+def test_advisor_reply_rejects_an_empty_message_contract():
+    conversation_id = _create_conversation(status="HANDOFF")
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/dashboard/conversations/{conversation_id}/reply",
+            json={"message": "   "},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "message"]

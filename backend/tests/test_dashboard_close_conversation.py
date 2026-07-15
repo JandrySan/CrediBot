@@ -43,7 +43,7 @@ def test_close_handoff_conversation_and_start_new_on_next_interaction():
     with TestClient(app) as client:
         response = client.post(
             f"/api/dashboard/conversations/{conversation_id}/close",
-            data={"resolution": "RESOLVED", "note": "Caso atendido"},
+            json={"resolution": "RESOLVED", "note": "Caso atendido"},
         )
 
     assert response.status_code == 200

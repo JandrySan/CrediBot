@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DashboardStats(BaseModel):
@@ -50,6 +50,19 @@ class ActionResponse(BaseModel):
     message_saved: bool | None = None
     whatsapp_sent: bool | None = None
     twilio: dict[str, Any] | None = None
+
+
+class AdvisorReplyRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    message: str = Field(min_length=1, max_length=1600)
+
+
+class ConversationCloseRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    resolution: Literal["APPROVED", "DENIED", "RESOLVED"] = "RESOLVED"
+    note: str = Field(default="", max_length=1000)
 
 
 class CleanupResponse(BaseModel):

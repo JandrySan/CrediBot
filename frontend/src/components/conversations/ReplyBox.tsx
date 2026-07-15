@@ -42,9 +42,20 @@ export function ReplyBox({ conversation }: Props) {
           }
         },
         onError: (error) => {
-          const backendMessage = axios.isAxiosError(error)
-            ? error.response?.data?.message
-            : "";
+          const responseData = axios.isAxiosError(error)
+            ? error.response?.data
+            : undefined;
+          const detail = responseData?.detail;
+          const backendMessage =
+            responseData?.message ||
+            (typeof detail === "string"
+              ? detail
+              : Array.isArray(detail)
+                ? detail
+                    .map((item) => item?.msg)
+                    .filter(Boolean)
+                    .join(" ")
+                : "");
 
           setSendError(
             backendMessage ||
