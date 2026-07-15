@@ -1,7 +1,8 @@
 import json
 from typing import Any
 
-from groq import Groq
+from groq import APIError, Groq
+from loguru import logger
 
 from app.config.settings import settings
 
@@ -9,7 +10,7 @@ from app.config.settings import settings
 class AIGateway:
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY
-        self.client = Groq(api_key=self.api_key) if self.api_key else None
+        self.client: Any = Groq(api_key=self.api_key) if self.api_key else None
         self.model = "llama-3.1-8b-instant"
 
     def is_available(self) -> bool:
@@ -30,9 +31,10 @@ class AIGateway:
                 response_format={"type": "json_object"},
             )
 
-            return json.loads(response.choices[0].message.content)
+            return json.loads(response.choices[0].message.content or "{}")
 
-        except Exception:
+        except (APIError, json.JSONDecodeError, AttributeError, IndexError, TypeError) as exc:
+            logger.warning("Groq no pudo generar JSON: {}", type(exc).__name__)
             return {}
 
     def generate_text(self, system_prompt: str, user_prompt: str) -> str:
@@ -49,9 +51,10 @@ class AIGateway:
                 temperature=0.3,
             )
 
-            return response.choices[0].message.content.strip()
+            return (response.choices[0].message.content or "").strip()
 
-        except Exception:
+        except (APIError, AttributeError, IndexError, TypeError) as exc:
+            logger.warning("Groq no pudo generar texto: {}", type(exc).__name__)
             return ""
 
     def generate_chat(self, messages: list[dict], temperature: float = 0.4) -> str:
@@ -65,9 +68,10 @@ class AIGateway:
                 temperature=temperature,
             )
 
-            return response.choices[0].message.content.strip()
+            return (response.choices[0].message.content or "").strip()
 
-        except Exception:
+        except (APIError, AttributeError, IndexError, TypeError) as exc:
+            logger.warning("Groq no pudo completar el chat: {}", type(exc).__name__)
             return ""
 
     def generate_with_tools(
@@ -96,7 +100,8 @@ class AIGateway:
                     tools=tools,
                     tool_choice=tool_choice,
                 )
-            except Exception:
+            except APIError as exc:
+                logger.warning("Groq interrumpio una ronda de tools: {}", type(exc).__name__)
                 break
 
             choice = response.choices[0]
@@ -129,11 +134,13 @@ class AIGateway:
                     "content": "",
                 }
                 current_messages.append(tool_result)
-                all_tool_results.append({
-                    "tool_name": tc.function.name,
-                    "tool_call_id": tc.id,
-                    "arguments": tc.function.arguments,
-                })
+                all_tool_results.append(
+                    {
+                        "tool_name": tc.function.name,
+                        "tool_call_id": tc.id,
+                        "arguments": tc.function.arguments,
+                    }
+                )
 
         final_text = ""
         if current_messages and current_messages[-1].get("role") == "assistant":

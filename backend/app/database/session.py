@@ -1,23 +1,23 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.config.settings import settings
 
-connect_args = {}
+engine_options = {}
 if settings.database_url.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+    engine_options = {
+        "connect_args": {"check_same_thread": False},
+        "poolclass": NullPool,
+    }
 
 engine = create_engine(
     settings.database_url,
     echo=settings.DEBUG,
-    connect_args=connect_args,
+    **engine_options,
 )
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def get_db():
@@ -25,5 +25,9 @@ def get_db():
 
     try:
         yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

@@ -1,9 +1,11 @@
 import os
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
 import httpx
+from groq import APIError
 
 from app.config.settings import settings
 
@@ -18,7 +20,7 @@ class SpeechToTextService:
         self.provider = (settings.AUDIO_STT_PROVIDER or "groq").strip().lower()
 
         self.model_name = settings.AUDIO_STT_MODEL
-        self.language = (settings.AUDIO_STT_LANGUAGE or "").strip() or None
+        self.language = "es"
         self.device = settings.AUDIO_STT_DEVICE
         self.compute_type = settings.AUDIO_STT_COMPUTE_TYPE
 
@@ -61,17 +63,23 @@ class SpeechToTextService:
                 "success": True,
                 "text": text,
             }
-        except Exception as exc:
+        except (
+            APIError,
+            httpx.HTTPError,
+            ImportError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
             return {
                 "success": False,
                 "message": f"Error al procesar audio: {exc}",
             }
         finally:
             if temp_path and temp_path.exists():
-                try:
+                with suppress(OSError):
                     temp_path.unlink()
-                except OSError:
-                    pass
 
     def _download_twilio_media(
         self,

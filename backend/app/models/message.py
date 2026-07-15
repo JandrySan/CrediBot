@@ -1,20 +1,28 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
+
+if TYPE_CHECKING:
+    from app.models.conversation import Conversation
 
 
 class Message(Base):
     __tablename__ = "messages"
 
-    id = Column(Integer, primary_key=True, index=True)
-    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id"))
+    direction: Mapped[str] = mapped_column(String(20))
+    message_type: Mapped[str] = mapped_column(String(20), default="TEXT")
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
 
-    direction = Column(String(20), nullable=False)  # INBOUND / OUTBOUND
-    message_type = Column(String(20), nullable=False, default="TEXT")  # TEXT / AUDIO
-    content = Column(Text, nullable=False)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    conversation = relationship("Conversation", back_populates="messages")
+    conversation: Mapped[Conversation] = relationship(back_populates="messages")

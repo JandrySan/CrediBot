@@ -1,5 +1,7 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
-from sqlalchemy.sql import func
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
 
@@ -7,11 +9,12 @@ from app.database.base import Base
 class AIAnalysis(Base):
     __tablename__ = "ai_analysis"
 
-    id = Column(Integer, primary_key=True, index=True)
-    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
-
-    intent = Column(String(50), nullable=True)
-    extracted_data = Column(Text, nullable=True)
-    model_used = Column(String(100), nullable=True)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id"))
+    intent: Mapped[str | None] = mapped_column(String(50))
+    extracted_data: Mapped[str | None] = mapped_column(Text)
+    model_used: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )

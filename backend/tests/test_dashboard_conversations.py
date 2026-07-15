@@ -1,5 +1,6 @@
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.database.session import SessionLocal
@@ -58,13 +59,11 @@ def test_get_conversations_returns_one_row_per_conversation():
     assert response.status_code == 200
 
     payload = response.json()
-    matching_rows = [
-        item for item in payload if item["conversation_id"] == conversation_id
-    ]
+    matching_rows = [item for item in payload if item["conversation_id"] == conversation_id]
 
     assert len(matching_rows) == 1
     assert matching_rows[0]["credit_result"] == "PREAPROBADO"
-    assert matching_rows[0]["credit_amount"] == 2000.0
+    assert matching_rows[0]["credit_amount"] == pytest.approx(2000.0)
     assert matching_rows[0]["term_months"] == 24
 
 
@@ -100,10 +99,7 @@ def test_get_conversations_hides_closed_empty_rows_even_with_credit_result():
         response = client.get("/api/dashboard/conversations")
 
     assert response.status_code == 200
-    assert all(
-        item["conversation_id"] != conversation_id
-        for item in response.json()
-    )
+    assert all(item["conversation_id"] != conversation_id for item in response.json())
 
 
 def test_get_conversations_hides_abandoned_closed_rows_with_messages():
@@ -142,10 +138,7 @@ def test_get_conversations_hides_abandoned_closed_rows_with_messages():
         response = client.get("/api/dashboard/conversations")
 
     assert response.status_code == 200
-    assert all(
-        item["conversation_id"] != conversation_id
-        for item in response.json()
-    )
+    assert all(item["conversation_id"] != conversation_id for item in response.json())
 
 
 def test_get_conversations_keeps_closed_resolved_rows_with_messages():
@@ -184,7 +177,4 @@ def test_get_conversations_keeps_closed_resolved_rows_with_messages():
         response = client.get("/api/dashboard/conversations")
 
     assert response.status_code == 200
-    assert any(
-        item["conversation_id"] == conversation_id
-        for item in response.json()
-    )
+    assert any(item["conversation_id"] == conversation_id for item in response.json())

@@ -5,15 +5,18 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 from twilio.twiml.messaging_response import MessagingResponse
 
+from app.config.settings import settings
 from app.database.session import get_db
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.customer_repository import CustomerRepository
 from app.repositories.message_repository import MessageRepository
+from app.security.rate_limit import rate_limit
+from app.security.twilio_signature import validate_twilio_signature
 from app.services.audio.speech_to_text import SpeechToTextService
 from app.services.audio.text_to_speech import TextToSpeechService
+from app.services.websocket.connection_manager import manager
 from app.services.whatsapp.response_mode import ResponseModePreference
 from app.services.whatsapp.whatsapp_service import WhatsAppService
-from app.services.websocket.connection_manager import manager
 
 router = APIRouter(prefix="/webhook", tags=["WhatsApp"])
 
@@ -110,7 +113,13 @@ async def serve_generated_audio(filename: str):
     return FileResponse(str(file_path), media_type="audio/ogg", filename=filename)
 
 
-@router.post("/whatsapp")
+@router.post(
+    "/whatsapp",
+    dependencies=[
+        Depends(validate_twilio_signature),
+        Depends(rate_limit("twilio-webhook", settings.WEBHOOK_RATE_LIMIT_PER_MINUTE)),
+    ],
+)
 async def receive_whatsapp_message(
     From: str = Form(default=""),
     Body: str = Form(default=""),
@@ -130,11 +139,15 @@ async def receive_whatsapp_message(
 
     has_media = _safe_int(NumMedia, 0) > 0
     media_content_type = (MediaContentType0 or "").lower().strip()
-    is_audio_media = has_media and MediaUrl0 and (
-        media_content_type.startswith("audio/")
-        or media_content_type.startswith("application/ogg")
-        or "ogg" in media_content_type
-        or message_type == "audio"
+    is_audio_media = (
+        has_media
+        and MediaUrl0
+        and (
+            media_content_type.startswith("audio/")
+            or media_content_type.startswith("application/ogg")
+            or "ogg" in media_content_type
+            or message_type == "audio"
+        )
     )
     force_text_reply = False
 
@@ -207,7 +220,9 @@ async def receive_whatsapp_message(
             )
     else:
         if not incoming_text:
-            response_text = "No recibi texto para procesar. Por favor, envia un mensaje de texto o audio."
+            response_text = (
+                "No recibi texto para procesar. Por favor, envia un mensaje de texto o audio."
+            )
             twilio_response = MessagingResponse()
             twilio_response.message(response_text)
             return PlainTextResponse(str(twilio_response), media_type="application/xml")
@@ -243,9 +258,7 @@ async def receive_whatsapp_message(
 
     clean_response_text = (response_text or "").strip()
     response_mode = (
-        ResponseModePreference.TEXT
-        if force_text_reply
-        else _resolve_response_mode(db, From)
+        ResponseModePreference.TEXT if force_text_reply else _resolve_response_mode(db, From)
     )
     twilio_response, tts_result, bot_response_type = _build_twilio_reply(
         response_text=clean_response_text,

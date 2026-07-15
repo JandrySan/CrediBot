@@ -1,4 +1,4 @@
-from fastapi import WebSocket
+from fastapi import WebSocket, WebSocketDisconnect
 
 
 class ConnectionManager:
@@ -19,7 +19,7 @@ class ConnectionManager:
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except Exception:
+            except (OSError, RuntimeError, WebSocketDisconnect):
                 disconnected.append(connection)
 
         for connection in disconnected:

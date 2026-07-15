@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-from app.services.conversation.orchestrator import ConversationOrchestrator
 from app.services.conversation.credit_application_service import CreditApplicationService
+from app.services.conversation.orchestrator import ConversationOrchestrator
 
 
 def _build_orchestrator_for_unit_tests() -> ConversationOrchestrator:

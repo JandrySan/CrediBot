@@ -25,34 +25,40 @@ class _FakeDb:
 
 
 def test_find_profile_returns_credibot_contract():
-    db = _FakeDb({
-        "national_id": "9990000003",
-        "full_name": "Maria Torres Cedeno",
-        "central_risk_status": "WATCHLIST",
-        "central_risk_reason": "Mora historica mayor a 60 dias",
-        "credit_score": 485,
-        "risk_level": "HIGH",
-        "total_outstanding_debt": Decimal("2100.00"),
-        "max_days_past_due": 90,
-        "missed_payments": 3,
-        "preliminary_history_result": "OBSERVADO",
-    })
+    db = _FakeDb(
+        {
+            "national_id": "9990000003",
+            "full_name": "Maria Torres Cedeno",
+            "central_risk_status": "WATCHLIST",
+            "central_risk_reason": "Mora historica mayor a 60 dias",
+            "credit_score": 485,
+            "risk_level": "HIGH",
+            "total_outstanding_debt": Decimal("2100.00"),
+            "max_days_past_due": 90,
+            "missed_payments": 3,
+            "preliminary_history_result": "OBSERVADO",
+        }
+    )
 
     profile = CreditBureauProfileService(db).find_profile("9990000003")
 
     assert db.params == {"identifier": "9990000003"}
-    assert profile | {
-        "national_id": "9990000003",
-        "full_name": "Maria Torres Cedeno",
-        "central_risk_status": "WATCHLIST",
-        "central_risk_reason": "Mora historica mayor a 60 dias",
-        "credit_score": 485,
-        "risk_level": "HIGH",
-        "total_outstanding_debt": 2100,
-        "max_days_past_due": 90,
-        "missed_payments": 3,
-        "preliminary_history_result": "OBSERVADO",
-    } == profile
+    assert (
+        profile
+        | {
+            "national_id": "9990000003",
+            "full_name": "Maria Torres Cedeno",
+            "central_risk_status": "WATCHLIST",
+            "central_risk_reason": "Mora historica mayor a 60 dias",
+            "credit_score": 485,
+            "risk_level": "HIGH",
+            "total_outstanding_debt": 2100,
+            "max_days_past_due": 90,
+            "missed_payments": 3,
+            "preliminary_history_result": "OBSERVADO",
+        }
+        == profile
+    )
 
 
 def test_find_profile_normalizes_whatsapp_prefix():

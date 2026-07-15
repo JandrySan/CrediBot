@@ -1,25 +1,20 @@
 import json
 import re
 
-from app.services.ai.intent_detector import IntentDetector
-from app.services.ai.entity_extractor import EntityExtractor
-from app.services.ai.response_generator import ResponseGenerator
-from app.services.ai.ai_gateway import AIGateway
-from app.services.tools import (
-    credit_bureau_tools,
-    customer_tools,
-    financial_tools,
-    policy_tools,
-)
-from app.services.tools.tool_registry import tool_registry
-from app.services.tools.tool_executor import ToolExecutor
-from app.services.rag.retrieval_service import RetrievalService
-
 from sqlalchemy.orm import Session
+
+from app.services.ai.ai_gateway import AIGateway
+from app.services.ai.entity_extractor import EntityExtractor
+from app.services.ai.intent_detector import IntentDetector
+from app.services.ai.response_generator import ResponseGenerator
+from app.services.rag.retrieval_service import RetrievalService
+from app.services.tools import register_builtin_tools
+from app.services.tools.tool_registry import tool_registry
 
 
 class AIOrchestrator:
     def __init__(self):
+        register_builtin_tools()
         self.intent_detector = IntentDetector()
         self.entity_extractor = EntityExtractor()
         self.response_generator = ResponseGenerator()
@@ -112,7 +107,6 @@ class AIOrchestrator:
                 "Verifica que GROQ_API_KEY este configurada e intenta nuevamente."
             )
 
-        executor = ToolExecutor(db=db)
         final_text, tool_results = self.gateway.generate_with_tools(
             messages=messages,
             tools=tools_specs,
@@ -137,27 +131,31 @@ class AIOrchestrator:
         if tool_results:
             for tr in tool_results:
                 tool_name = tr.get("tool_name", "")
-                arguments = self._parse_tool_arguments(tr.get("arguments", "{}"))
-                if arguments is None:
+                parsed_arguments = self._parse_tool_arguments(tr.get("arguments", "{}"))
+                if parsed_arguments is None:
                     continue
 
-                result = self._execute_tool(tool_name, arguments, db)
+                result = self._execute_tool(tool_name, parsed_arguments, db)
                 if result is None:
                     continue
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tr.get("tool_call_id", ""),
-                    "content": json.dumps(result, ensure_ascii=False),
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tr.get("tool_call_id", ""),
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
 
-            messages.append({
-                "role": "user",
-                "content": (
-                    "Con base en los resultados de las herramientas que ejecutaste, "
-                    "responde al usuario de forma clara y natural en espanol."
-                ),
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Con base en los resultados de las herramientas que ejecutaste, "
+                        "responde al usuario de forma clara y natural en espanol."
+                    ),
+                }
+            )
 
             final_text = self.gateway.generate_chat(messages=messages, temperature=0.4)
 
@@ -221,15 +219,17 @@ class AIOrchestrator:
         tool_result: dict,
     ) -> str:
         follow_up_messages = list(messages)
-        follow_up_messages.append({
-            "role": "user",
-            "content": (
-                f"Resultado de la herramienta {tool_name}: "
-                f"{json.dumps(tool_result, ensure_ascii=False)}\n\n"
-                "Responde al usuario de forma clara, natural y breve en espanol. "
-                "No muestres JSON ni etiquetas de herramientas."
-            ),
-        })
+        follow_up_messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Resultado de la herramienta {tool_name}: "
+                    f"{json.dumps(tool_result, ensure_ascii=False)}\n\n"
+                    "Responde al usuario de forma clara, natural y breve en espanol. "
+                    "No muestres JSON ni etiquetas de herramientas."
+                ),
+            }
+        )
 
         response = self.gateway.generate_chat(
             messages=follow_up_messages,

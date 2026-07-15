@@ -1,0 +1,7 @@
+-r requirements.txt
+
+pytest==9.1.1
+pytest-cov==7.0.0
+httpx2==2.7.0
+ruff==0.15.7
+mypy==1.19.1

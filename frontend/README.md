@@ -28,10 +28,9 @@ Ejemplo:
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:8000
-VITE_WS_BASE_URL=ws://127.0.0.1:8000
 ```
 
-Si `VITE_WS_BASE_URL` se omite, se deriva desde `VITE_API_BASE_URL`.
+La URL WebSocket se deriva automaticamente desde `VITE_API_BASE_URL`.
 
 En produccion, el build puede quedar sin `VITE_API_BASE_URL`; en ese caso usa
 el mismo origen del navegador. Actualmente CloudFront enruta:

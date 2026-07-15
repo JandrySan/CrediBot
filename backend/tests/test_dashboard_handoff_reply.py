@@ -37,12 +37,14 @@ def _create_conversation(status: str = "ACTIVE", response_mode: str = "AUDIO") -
 def test_take_conversation_resets_audio_mode_and_notifies_customer():
     conversation_id = _create_conversation(status="ACTIVE", response_mode="AUDIO")
 
-    with patch(
-        "app.api.dashboard.TwilioWhatsAppService.send_message",
-        return_value={"success": True, "sid": "SM123"},
-    ) as sender:
-        with TestClient(app) as client:
-            response = client.post(f"/api/dashboard/conversations/{conversation_id}/take")
+    with (
+        patch(
+            "app.services.dashboard.conversation_service.TwilioWhatsAppService.send_message",
+            return_value={"success": True, "sid": "SM123"},
+        ) as sender,
+        TestClient(app) as client,
+    ):
+        response = client.post(f"/api/dashboard/conversations/{conversation_id}/take")
 
     assert response.status_code == 200
     payload = response.json()
@@ -63,15 +65,17 @@ def test_take_conversation_resets_audio_mode_and_notifies_customer():
 def test_advisor_reply_is_not_saved_when_twilio_fails():
     conversation_id = _create_conversation(status="HANDOFF", response_mode="AUDIO")
 
-    with patch(
-        "app.api.dashboard.TwilioWhatsAppService.send_message",
-        return_value={"success": False, "message": "sandbox no unido"},
+    with (
+        patch(
+            "app.services.dashboard.conversation_service.TwilioWhatsAppService.send_message",
+            return_value={"success": False, "message": "sandbox no unido"},
+        ),
+        TestClient(app) as client,
     ):
-        with TestClient(app) as client:
-            response = client.post(
-                f"/api/dashboard/conversations/{conversation_id}/reply",
-                data={"message": "Hola, soy tu asesor."},
-            )
+        response = client.post(
+            f"/api/dashboard/conversations/{conversation_id}/reply",
+            data={"message": "Hola, soy tu asesor."},
+        )
 
     assert response.status_code == 200
     payload = response.json()
@@ -97,15 +101,17 @@ def test_advisor_reply_is_not_saved_when_twilio_fails():
 def test_advisor_reply_is_saved_after_twilio_success():
     conversation_id = _create_conversation(status="HANDOFF", response_mode="AUDIO")
 
-    with patch(
-        "app.api.dashboard.TwilioWhatsAppService.send_message",
-        return_value={"success": True, "sid": "SM124"},
+    with (
+        patch(
+            "app.services.dashboard.conversation_service.TwilioWhatsAppService.send_message",
+            return_value={"success": True, "sid": "SM124"},
+        ),
+        TestClient(app) as client,
     ):
-        with TestClient(app) as client:
-            response = client.post(
-                f"/api/dashboard/conversations/{conversation_id}/reply",
-                data={"message": "Hola, soy tu asesor."},
-            )
+        response = client.post(
+            f"/api/dashboard/conversations/{conversation_id}/reply",
+            data={"message": "Hola, soy tu asesor."},
+        )
 
     assert response.status_code == 200
     payload = response.json()

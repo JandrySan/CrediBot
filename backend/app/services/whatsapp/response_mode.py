@@ -1,12 +1,13 @@
 import re
 import unicodedata
+from typing import ClassVar
 
 
 class ResponseModePreference:
     AUDIO = "AUDIO"
     TEXT = "TEXT"
 
-    AUDIO_PATTERNS = (
+    AUDIO_PATTERNS: ClassVar[tuple[str, ...]] = (
         r"\b(responde|respondeme|contestame|mandame|enviame|enviar|manda|envia)\b.*\b(audio|voz|nota de voz)\b",
         r"\b(audio|voz|nota de voz)\b.*\b(respuesta|respuestas|responder|contestame|mandame|enviame)\b",
         r"\bmodo audio\b",
@@ -16,7 +17,7 @@ class ResponseModePreference:
         r"\bquiero audio\b",
         r"\bquiero voz\b",
     )
-    TEXT_PATTERNS = (
+    TEXT_PATTERNS: ClassVar[tuple[str, ...]] = (
         r"\b(responde|respondeme|contestame|mandame|enviame|enviar|manda|envia|escribe)\b.*\b(texto|escrito)\b",
         r"\b(texto|escrito)\b.*\b(respuesta|respuestas|responder|contestame|mandame|enviame)\b",
         r"\bmodo texto\b",
@@ -26,56 +27,62 @@ class ResponseModePreference:
         r"\bquiero texto\b",
         r"\bpor escrito\b",
     )
-    AUDIO_COMMANDS = {
-        "audio",
-        "modo audio",
-        "responde audio",
-        "responde en audio",
-        "respondeme audio",
-        "respondeme en audio",
-        "contestame en audio",
-        "por audio",
-        "en audio",
-        "quiero audio",
-        "quiero voz",
-        "nota de voz",
-    }
-    TEXT_COMMANDS = {
-        "texto",
-        "modo texto",
-        "responde texto",
-        "responde en texto",
-        "respondeme texto",
-        "respondeme en texto",
-        "contestame en texto",
-        "por texto",
-        "en texto",
-        "solo texto",
-        "quiero texto",
-        "por escrito",
-    }
-    BUSINESS_CONTENT_KEYWORDS = {
-        "asesor",
-        "credito",
-        "creditos",
-        "prestamo",
-        "prestamos",
-        "solicitar",
-        "solicito",
-        "monto",
-        "dolares",
-        "plazo",
-        "mes",
-        "meses",
-        "ingreso",
-        "ingresos",
-        "requisito",
-        "requisitos",
-        "tasa",
-        "interes",
-        "documento",
-        "documentos",
-    }
+    AUDIO_COMMANDS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "audio",
+            "modo audio",
+            "responde audio",
+            "responde en audio",
+            "respondeme audio",
+            "respondeme en audio",
+            "contestame en audio",
+            "por audio",
+            "en audio",
+            "quiero audio",
+            "quiero voz",
+            "nota de voz",
+        }
+    )
+    TEXT_COMMANDS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "texto",
+            "modo texto",
+            "responde texto",
+            "responde en texto",
+            "respondeme texto",
+            "respondeme en texto",
+            "contestame en texto",
+            "por texto",
+            "en texto",
+            "solo texto",
+            "quiero texto",
+            "por escrito",
+        }
+    )
+    BUSINESS_CONTENT_KEYWORDS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "asesor",
+            "credito",
+            "creditos",
+            "prestamo",
+            "prestamos",
+            "solicitar",
+            "solicito",
+            "monto",
+            "dolares",
+            "plazo",
+            "mes",
+            "meses",
+            "ingreso",
+            "ingresos",
+            "requisito",
+            "requisitos",
+            "tasa",
+            "interes",
+            "documento",
+            "documentos",
+        }
+    )
 
     @classmethod
     def detect(cls, text: str) -> str | None:
@@ -119,10 +126,7 @@ class ResponseModePreference:
         if re.search(r"\d", normalized):
             return False
 
-        return not any(
-            keyword in normalized
-            for keyword in cls.BUSINESS_CONTENT_KEYWORDS
-        )
+        return not any(keyword in normalized for keyword in cls.BUSINESS_CONTENT_KEYWORDS)
 
     @staticmethod
     def normalize(text: str) -> str:

@@ -1,8 +1,11 @@
+import re
 import time
 import uuid
-import re
+from contextlib import suppress
 from pathlib import Path
 from urllib.parse import urlparse
+
+from gtts.tts import gTTSError
 
 from app.config.settings import settings
 
@@ -10,7 +13,7 @@ from app.config.settings import settings
 class TextToSpeechService:
     def __init__(self):
         self.enabled = bool(settings.AUDIO_REPLY_ENABLED)
-        self.language = (settings.AUDIO_REPLY_LANGUAGE or "es").strip() or "es"
+        self.language = "es"
 
         backend_root = Path(__file__).resolve().parents[3]
         self.output_dir = backend_root / "work" / "audio_out"
@@ -44,17 +47,15 @@ class TextToSpeechService:
                 "success": True,
                 "media_url": media_url,
             }
-        except Exception as exc:
+        except (gTTSError, ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
             return {
                 "success": False,
                 "message": f"Error al generar audio: {exc}",
             }
         finally:
             if mp3_path.exists():
-                try:
+                with suppress(OSError):
                     mp3_path.unlink()
-                except OSError:
-                    pass
 
     def _prepare_text_for_voice(self, text: str) -> str:
         prepared = text
@@ -113,14 +114,12 @@ class TextToSpeechService:
             input_container.close()
 
     def _build_public_media_url(self, filename: str) -> str:
-        base_url = (settings.AUDIO_REPLY_PUBLIC_BASE_URL or "").strip()
-
-        if not base_url:
-            webhook_url = (settings.TWILIO_WEBHOOK_URL or "").strip()
-            if webhook_url:
-                parsed = urlparse(webhook_url)
-                if parsed.scheme and parsed.netloc:
-                    base_url = f"{parsed.scheme}://{parsed.netloc}"
+        base_url = ""
+        webhook_url = (settings.TWILIO_WEBHOOK_URL or "").strip()
+        if webhook_url:
+            parsed = urlparse(webhook_url)
+            if parsed.scheme and parsed.netloc:
+                base_url = f"{parsed.scheme}://{parsed.netloc}"
 
         if not base_url:
             return ""

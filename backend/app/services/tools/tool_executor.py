@@ -1,6 +1,7 @@
 import json
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.services.tools.tool_registry import tool_registry
@@ -47,11 +48,11 @@ class ToolExecutor:
                 "result": result,
             }
 
-        except Exception as e:
+        except (ArithmeticError, SQLAlchemyError, TypeError, ValueError) as exc:
             return {
                 "tool_name": tool_name,
                 "success": False,
-                "error": str(e),
+                "error": str(exc),
             }
 
     def execute_tool_calls(self, tool_calls: list[Any]) -> list[dict[str, Any]]:

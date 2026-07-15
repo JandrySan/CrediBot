@@ -41,10 +41,12 @@ class FAQLoader:
 
                 if not question or not answer:
                     skipped += 1
-                    errors.append({
-                        "row": index,
-                        "error": "question/answer son obligatorios",
-                    })
+                    errors.append(
+                        {
+                            "row": index,
+                            "error": "question/answer son obligatorios",
+                        }
+                    )
                     continue
 
                 faq = KnowledgeBase(
@@ -57,11 +59,11 @@ class FAQLoader:
 
                 self.db.add(faq)
                 created += 1
-            except Exception as exc:
+            except (AttributeError, TypeError, ValueError) as exc:
                 skipped += 1
                 errors.append({"row": index, "error": str(exc)})
 
-        self.db.commit()
+        self.db.flush()
 
         return {
             "created": created,
@@ -95,12 +97,5 @@ class FAQLoader:
 
     def _keywords_from_text(self, text: str) -> list[str]:
         stopwords = {"para", "como", "cual", "cuales", "que", "los", "las", "una", "con"}
-        words = [
-            token.strip(".,;:!?¿¡()[]").lower()
-            for token in text.split()
-        ]
-        return [
-            word for word in words
-            if len(word) > 3 and word not in stopwords
-        ][:12]
-
+        words = [token.strip(".,;:!?¿¡()[]").lower() for token in text.split()]
+        return [word for word in words if len(word) > 3 and word not in stopwords][:12]

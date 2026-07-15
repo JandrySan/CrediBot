@@ -86,14 +86,11 @@ Ejecuta:
 5. Construye imagen Docker desde `backend/Dockerfile`.
 6. Publica tags `latest` y `${github.sha}`.
 7. Lee la task definition activa del servicio ECS.
-8. Verifica que exista `DATABASE_URL` o `SUPABASE_DATABASE_URL`.
-9. Registra una nueva revision con la imagen nueva.
-10. Asegura variables no secretas de audio:
-    - `AUDIO_REPLY_ENABLED=true`
-    - `AUDIO_REPLY_LANGUAGE=es`
-    - `AUDIO_REPLY_PUBLIC_BASE_URL`
-11. Actualiza el servicio ECS.
-12. Espera estabilidad.
+8. Valida los secrets requeridos y sincroniza los del dashboard.
+9. Ejecuta `alembic upgrade head` contra la base productiva.
+10. Registra una task definition con nombres canonicos de entorno y secrets.
+11. Actualiza el servicio ECS y espera estabilidad.
+12. Verifica health, login JWT y rechazo de webhooks sin firma.
 
 ### Frontend CD
 
@@ -120,13 +117,17 @@ Variables/secrets requeridos:
 | `AWS_REGION` | Variable | Region AWS. |
 | `AWS_ECR_REPOSITORY` | Variable | Repositorio ECR del backend. |
 | `AWS_ROLE_ARN` | Secret | Rol OIDC que asume GitHub Actions. |
+| `DASHBOARD_ADMIN_PASSWORD` | Secret | Se sincroniza a Secrets Manager sin exponerlo en ECS. |
+| `DASHBOARD_JWT_SECRET` | Secret | Clave de firma JWT, minimo 32 caracteres. |
 | `AWS_ECS_CLUSTER` | Variable | Cluster ECS. |
 | `AWS_ECS_SERVICE` | Variable | Servicio ECS. |
 | `AWS_ECS_CONTAINER_NAME` | Variable | Nombre del contenedor backend. |
 | `AWS_S3_FRONTEND_BUCKET` | Variable | Bucket del frontend. |
 | `AWS_CLOUDFRONT_DISTRIBUTION_ID` | Variable | Distribucion CloudFront. |
 | `FRONTEND_PUBLIC_URL` | Variable | URL publica del dashboard. |
-| `AUDIO_REPLY_PUBLIC_BASE_URL` | Variable opcional | Base publica para audios. Si falta, usa `FRONTEND_PUBLIC_URL`. |
+
+Twilio, Groq y la base de datos no se duplican en GitHub Secrets; sus valores
+permanecen exclusivamente en AWS Secrets Manager.
 
 ## Secrets de aplicacion
 
@@ -143,12 +144,12 @@ Secrets actuales esperados:
 | `credibot/twilio-auth-token` | `TWILIO_AUTH_TOKEN` |
 | `credibot/twilio-webhook-url` | `TWILIO_WEBHOOK_URL` |
 | `credibot/twilio-whatsapp-from` | `TWILIO_WHATSAPP_FROM` |
-| `credibot/twilio-whatsapp-number` | `TWILIO_WHATSAPP_NUMBER` |
+| `credibot/dashboard-admin-password` | `DASHBOARD_ADMIN_PASSWORD` |
+| `credibot/dashboard-jwt-secret` | `DASHBOARD_JWT_SECRET` |
 
 Variables no secretas recomendadas en ECS:
 
 ```env
-APP_NAME=CrediBot
 DEBUG=false
 AI_ONLY_MODE=false
 PORT=8000
@@ -157,8 +158,8 @@ BACKEND_CORS_ORIGINS=https://d30z3dsmpm7ctx.cloudfront.net
 AUDIO_STT_ENABLED=true
 AUDIO_STT_PROVIDER=groq
 AUDIO_REPLY_ENABLED=true
-AUDIO_REPLY_LANGUAGE=es
-AUDIO_REPLY_PUBLIC_BASE_URL=https://d30z3dsmpm7ctx.cloudfront.net
+DASHBOARD_AUTH_ENABLED=true
+TWILIO_VALIDATE_SIGNATURE=true
 CONVERSATION_SESSION_TIMEOUT_MINUTES=60
 CONVERSATION_CLEANUP_BATCH_SIZE=100
 ABANDONED_CONVERSATION_RETENTION_DAYS=7
@@ -323,17 +324,14 @@ Cuando se configure:
 2. Agregar alias al distribution de CloudFront.
 3. Apuntar DNS al distribution.
 4. Actualizar `FRONTEND_PUBLIC_URL`.
-5. Actualizar `AUDIO_REPLY_PUBLIC_BASE_URL`.
-6. Actualizar `TWILIO_WEBHOOK_URL`.
-7. Actualizar CORS.
+5. Actualizar `TWILIO_WEBHOOK_URL`.
+6. Actualizar CORS.
 
 ## Pendientes de produccion real
 
 - Dominio propio.
-- Validacion de firma Twilio.
-- Autenticacion y roles en dashboard.
-- Rate limiting.
 - Alarmas CloudWatch.
+- Rate limiting distribuido si ECS escala a varias tareas.
 - Backups y politica de retencion.
 - Separar staging/prod.
 - Rotacion periodica de secretos.

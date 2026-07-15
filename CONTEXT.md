@@ -1,6 +1,6 @@
 # CrediBot - Contexto tecnico
 
-Actualizado: 2026-07-13
+Actualizado: 2026-07-15
 
 ## Resumen
 
@@ -49,14 +49,15 @@ Servicios actuales:
 ```text
 CrediBot/
 |-- backend/
-|   |-- app/api/             webhook, dashboard, websocket
-|   |-- app/database/        engine, sesiones e inicializacion incremental
+|   |-- app/api/             webhook, auth y routers de dashboard/websocket
+|   |-- app/database/        engine, unidad transaccional y migraciones Alembic
 |   |-- app/models/          modelos SQLAlchemy
 |   |-- app/repositories/    acceso a datos
 |   |-- app/services/
 |   |   |-- ai/              Groq, intencion, extraccion, respuesta
 |   |   |-- audio/           STT y TTS
-|   |   |-- conversation/    orquestador, estados, solicitud de credito
+|   |   |-- conversation/    sesion, extraccion, politicas y respuestas
+|   |   |-- dashboard/       consultas y operaciones del panel
 |   |   |-- credit_bureau/   consulta a central simulada
 |   |   |-- rag/             FAQ/RAG
 |   |   |-- rules/           reglas de precalificacion
@@ -65,7 +66,7 @@ CrediBot/
 |   |   `-- whatsapp/        Twilio y preferencias texto/audio
 |   |-- app/state_machine/   estados y transiciones
 |   `-- tests/               pruebas backend
-|-- frontend/                dashboard React
+|-- frontend/                dashboard React por paginas y features
 |-- supabase/migrations/     schema y datos simulados
 |-- docs/                    documentacion operativa
 |-- .github/workflows/       CI/CD
@@ -83,13 +84,14 @@ CrediBot/
 - `ConversationStateHistory`: historial de transiciones.
 - `KnowledgeBase`: FAQs activas.
 
-Inicializacion incremental:
+Versionado del esquema publico:
 
-- `customers.national_id` se agrega si falta.
-- `idx_customers_national_id` se crea si falta.
-- `conversations.response_mode` se agrega si falta.
-- `credit_applications.reason` se convierte a `TEXT` en PostgreSQL si estaba
-  limitado.
+- Alembic aplica el esquema al iniciar si `RUN_DB_MIGRATIONS=true`.
+- La migracion base es idempotente para adoptar bases existentes.
+- `create_all()` queda limitado a pruebas o desarrollo explicito con
+  `AUTO_CREATE_DB_SCHEMA=true`.
+- La sesion de cada solicitud controla `commit` y `rollback`; los repositorios
+  solo hacen `flush`.
 
 ## Central de riesgo simulada
 
@@ -402,7 +404,6 @@ Backend:
 
 ```env
 DATABASE_URL=
-SUPABASE_DATABASE_URL=
 GROQ_API_KEY=
 AI_ONLY_MODE=false
 BACKEND_CORS_ORIGINS=https://d30z3dsmpm7ctx.cloudfront.net
@@ -411,29 +412,25 @@ TWILIO_ENABLED=true
 TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
-TWILIO_WHATSAPP_NUMBER=+14155238886
 TWILIO_WEBHOOK_URL=https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp
 
 AUDIO_STT_ENABLED=true
 AUDIO_STT_PROVIDER=groq
 AUDIO_REPLY_ENABLED=true
-AUDIO_REPLY_LANGUAGE=es
-AUDIO_REPLY_PUBLIC_BASE_URL=https://d30z3dsmpm7ctx.cloudfront.net
 ```
 
 Frontend:
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:8000
-VITE_WS_BASE_URL=ws://127.0.0.1:8000
 ```
 
 ## CI/CD
 
 Workflows:
 
-- `ci-backend.yml`: instala dependencias, compila Python y corre pruebas.
-- `ci-frontend.yml`: `npm ci`, lint y build.
+- `ci-backend.yml`: Ruff, Mypy, compilacion, pruebas y cobertura.
+- `ci-frontend.yml`: `npm ci`, lint, Vitest y build.
 - `cd-backend-aws.yml`: build/push Docker en ECR, registra task definition y
   actualiza ECS.
 - `cd-frontend-aws.yml`: build frontend, sync a S3 e invalidacion CloudFront.
@@ -443,11 +440,14 @@ variables no secretas de respuesta por voz.
 
 ## Validacion actual
 
-Validado el 2026-07-13:
+Validado el 2026-07-15:
 
 - Supabase migrado.
-- Backend local: 53 pruebas.
-- Frontend local: lint y build correctos.
+- Backend local: 58 pruebas y 60.65% de cobertura.
+- Backend local: formato, Ruff y Mypy correctos.
+- Frontend local: lint, 2 pruebas y build correctos.
+- Alembic validado en SQLite vacio y PostgreSQL existente.
+- Firma Twilio, JWT, roles y rate limiting incorporados.
 - CI/CD backend y frontend correctos.
 - CloudFront responde API.
 - Webhook responde texto.
@@ -457,11 +457,8 @@ Validado el 2026-07-13:
 ## Pendientes
 
 - Dominio propio y certificado ACM.
-- Validacion de firma Twilio.
-- Autenticacion y roles del dashboard.
-- Rate limiting.
 - Alarmas CloudWatch.
 - Separacion staging/prod.
 - Rotacion periodica de secretos.
-- Estado de envio para mensajes de asesor.
+- Redis para rate limiting distribuido cuando haya varias tareas ECS.
 - Deduplicacion o agrupacion por cliente en dashboard.

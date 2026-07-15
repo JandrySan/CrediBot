@@ -64,7 +64,7 @@ def obtener_reglas_credito() -> dict:
 )
 def consultar_politica(consulta: str) -> dict:
     consulta_lower = consulta.lower()
-    resultados = []
+    resultados: list[dict[str, str | int]] = []
 
     faqs = [
         {
@@ -103,13 +103,15 @@ def consultar_politica(consulta: str) -> dict:
         keywords = faq["palabras_clave"]
         matched = [kw for kw in keywords if kw in consulta_lower]
         if matched:
-            resultados.append({
-                "pregunta": faq["pregunta"],
-                "respuesta": faq["respuesta"],
-                "relevancia": len(matched),
-            })
+            resultados.append(
+                {
+                    "pregunta": str(faq["pregunta"]),
+                    "respuesta": str(faq["respuesta"]),
+                    "relevancia": len(matched),
+                }
+            )
 
-    resultados.sort(key=lambda x: x["relevancia"], reverse=True)
+    resultados.sort(key=lambda item: int(item["relevancia"]), reverse=True)
 
     if not resultados:
         return {

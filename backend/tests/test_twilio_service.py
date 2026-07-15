@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 from app.services.whatsapp import twilio_service
 
-
 FAKE_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "AC0000000000000000000000000000000")
 FAKE_API_KEY_SID = os.getenv("TWILIO_API_KEY_SID", "SK0000000000000000000000000000000")
 FAKE_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "test-auth-token")
@@ -17,7 +16,7 @@ class TwilioServiceTests(unittest.TestCase):
             TWILIO_ENABLED=True,
             TWILIO_ACCOUNT_SID=FAKE_API_KEY_SID,
             TWILIO_AUTH_TOKEN=FAKE_AUTH_TOKEN,
-            TWILIO_WHATSAPP_NUMBER="+14155238886",
+            TWILIO_WHATSAPP_FROM="+14155238886",
             TWILIO_WEBHOOK_URL="",
         )
 
@@ -28,12 +27,12 @@ class TwilioServiceTests(unittest.TestCase):
             self.assertFalse(result["success"])
             self.assertIn("AC", result["message"])
 
-    def test_send_message_uses_legacy_whatsapp_number_and_normalizes_recipient(self):
+    def test_send_message_uses_configured_from_number_and_normalizes_recipient(self):
         fake_settings = SimpleNamespace(
             TWILIO_ENABLED=True,
             TWILIO_ACCOUNT_SID=FAKE_ACCOUNT_SID,
             TWILIO_AUTH_TOKEN=FAKE_AUTH_TOKEN,
-            TWILIO_WHATSAPP_NUMBER="+14155238886",
+            TWILIO_WHATSAPP_FROM="+14155238886",
             TWILIO_WEBHOOK_URL="",
         )
 
@@ -60,13 +59,16 @@ class TwilioServiceTests(unittest.TestCase):
             TWILIO_ENABLED=True,
             TWILIO_ACCOUNT_SID=FAKE_ACCOUNT_SID,
             TWILIO_AUTH_TOKEN=FAKE_AUTH_TOKEN,
-            TWILIO_WHATSAPP_NUMBER="+14155238886",
+            TWILIO_WHATSAPP_FROM="+14155238886",
             TWILIO_WEBHOOK_URL="",
         )
 
-        with patch.object(twilio_service, "settings", fake_settings), patch.object(
-            twilio_service.time,
-            "sleep",
+        with (
+            patch.object(twilio_service, "settings", fake_settings),
+            patch.object(
+                twilio_service.time,
+                "sleep",
+            ),
         ):
             service = twilio_service.TwilioWhatsAppService()
             service.client = unittest.mock.Mock()

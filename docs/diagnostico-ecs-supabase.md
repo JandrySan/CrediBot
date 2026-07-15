@@ -176,11 +176,12 @@ aws ecs describe-task-definition \
 
 Debe incluir:
 
-- `DATABASE_URL` o `SUPABASE_DATABASE_URL`.
+- `DATABASE_URL`.
 - `GROQ_API_KEY`.
 - `TWILIO_*`.
 - `AUDIO_REPLY_ENABLED=true`.
-- `AUDIO_REPLY_PUBLIC_BASE_URL=https://d30z3dsmpm7ctx.cloudfront.net`.
+- `DASHBOARD_AUTH_ENABLED=true`.
+- `TWILIO_VALIDATE_SIGNATURE=true`.
 
 ## 7. Ver eventos y logs ECS
 
@@ -268,7 +269,7 @@ aws secretsmanager get-secret-value \
 Validar:
 
 - `AUDIO_REPLY_ENABLED=true`
-- `AUDIO_REPLY_PUBLIC_BASE_URL=https://d30z3dsmpm7ctx.cloudfront.net`
+- `TWILIO_WEBHOOK_URL=https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp`
 - CloudFront enruta `/webhook/*`.
 - El endpoint `GET /webhook/audio/{filename}` responde `audio/ogg`.
 

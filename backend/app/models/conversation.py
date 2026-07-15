@@ -1,23 +1,39 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
+
+if TYPE_CHECKING:
+    from app.models.customer import Customer
+    from app.models.message import Message
 
 
 class Conversation(Base):
     __tablename__ = "conversations"
 
-    id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
+    current_state: Mapped[str] = mapped_column(String(50), default="START")
+    status: Mapped[str] = mapped_column(String(30), default="ACTIVE")
+    result: Mapped[str | None] = mapped_column(String(50))
+    response_mode: Mapped[str] = mapped_column(
+        String(20),
+        default="TEXT",
+        server_default="TEXT",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        onupdate=func.now(),
+    )
 
-    current_state = Column(String(50), nullable=False, default="START")
-    status = Column(String(30), nullable=False, default="ACTIVE")
-    result = Column(String(50), nullable=True)
-    response_mode = Column(String(20), nullable=False, default="TEXT", server_default="TEXT")
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    customer = relationship("Customer", back_populates="conversations")
-    messages = relationship("Message", back_populates="conversation")
+    customer: Mapped[Customer] = relationship(back_populates="conversations")
+    messages: Mapped[list[Message]] = relationship(back_populates="conversation")

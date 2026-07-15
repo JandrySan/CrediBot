@@ -1,99 +1,89 @@
-from decimal import Decimal, InvalidOperation
-import re
-import unicodedata
-
 from sqlalchemy.orm import Session
 
 from app.config.settings import settings
 from app.repositories.ai_analysis_repository import AIAnalysisRepository
 from app.repositories.conversation_repository import ConversationRepository
-from app.repositories.conversation_state_history_repository import ConversationStateHistoryRepository
+from app.repositories.conversation_state_history_repository import (
+    ConversationStateHistoryRepository,
+)
 from app.repositories.credit_application_repository import CreditApplicationRepository
 from app.repositories.customer_repository import CustomerRepository
 from app.repositories.message_repository import MessageRepository
 from app.services.ai.ai_orchestrator import AIOrchestrator
 from app.services.conversation.conversation_state_service import ConversationStateService
 from app.services.conversation.credit_application_service import CreditApplicationService
-from app.services.rag.retrieval_service import RetrievalService
+from app.services.conversation.faq_answer_service import FAQAnswerService
+from app.services.conversation.history import build_ai_history
+from app.services.conversation.input_extractor import ConversationInputExtractor
+from app.services.conversation.policy import ConversationPolicy
+from app.services.conversation.response_builder import ConversationResponseBuilder
 from app.state_machine.states import ConversationState
 from app.state_machine.transitions import can_transition
 
 
 class ConversationOrchestrator:
+    """Coordina un mensaje; delega extracción, políticas y presentación."""
+
     def __init__(self, db: Session):
         self.db = db
-
         self.customer_repo = CustomerRepository(db)
         self.conversation_repo = ConversationRepository(db)
         self.message_repo = MessageRepository(db)
         self.application_repo = CreditApplicationRepository(db)
         self.ai_analysis_repo = AIAnalysisRepository(db)
         self.state_history_repo = ConversationStateHistoryRepository(db)
-
         self.ai = AIOrchestrator()
         self.state_service = ConversationStateService()
         self.credit_service = CreditApplicationService()
+        self.input_extractor = ConversationInputExtractor(
+            self.state_service,
+            self.credit_service,
+        )
+        self.responses = ConversationResponseBuilder()
+        self.faq_service = FAQAnswerService(db, self.ai.response_generator)
 
     def handle_text_message(self, phone_number: str, text: str) -> str:
-        return self._handle_message(
-            phone_number=phone_number,
-            text=text,
-            inbound_message_type="TEXT",
-        )
+        return self._handle_message(phone_number, text, "TEXT")
 
     def handle_audio_message(self, phone_number: str, transcript_text: str) -> str:
-        return self._handle_message(
-            phone_number=phone_number,
-            text=transcript_text,
-            inbound_message_type="AUDIO",
-        )
+        return self._handle_message(phone_number, transcript_text, "AUDIO")
 
     def _handle_message(
         self,
         phone_number: str,
         text: str,
-        inbound_message_type: str = "TEXT",
+        inbound_message_type: str,
     ) -> str:
-        text = (text or "").strip()
+        return self._process_message(
+            phone_number=phone_number,
+            text=(text or "").strip(),
+            inbound_message_type=inbound_message_type,
+        )
 
+    def _process_message(
+        self,
+        phone_number: str,
+        text: str,
+        inbound_message_type: str,
+    ) -> str:
         customer = self.customer_repo.get_or_create(phone_number)
         conversation = self.conversation_repo.get_or_create_active(customer.id)
         application = self.application_repo.get_or_create_latest(customer.id)
-        self._clear_invalid_customer_name(customer)
-
-        self._save_message(
-            conversation_id=conversation.id,
-            direction="INBOUND",
-            content=text,
-            message_type=inbound_message_type,
-        )
+        self.input_extractor.clear_invalid_customer_name(customer)
+        self._save_message(conversation.id, "INBOUND", text, inbound_message_type)
 
         if settings.AI_ONLY_MODE:
-            history = self._build_ai_history(conversation.id)
-            if history and history[-1].get("role") == "user":
-                history = history[:-1]
-
-            response = self.ai.generate_whatsapp_reply(
-                text=text,
-                history=history,
-                db=self.db,
-            )
-            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
-            return response
-
+            return self._answer_with_ai(conversation.id, text)
         if conversation.status == "HANDOFF":
-            # In handoff mode only the advisor should reply.
             return ""
 
-        ai_data = self.ai.analyze_message(text)
-        ai_data = self._enrich_extracted_data(
-            conversation=conversation,
-            customer=customer,
-            application=application,
-            text=text,
-            ai_data=ai_data,
+        ai_data = self.input_extractor.enrich(
+            conversation,
+            customer,
+            application,
+            text,
+            self.ai.analyze_message(text),
         )
-
         self.ai_analysis_repo.save_analysis(
             conversation_id=conversation.id,
             intent=ai_data.get("intent"),
@@ -101,41 +91,46 @@ class ConversationOrchestrator:
             model_used=self.ai.get_model_name(),
         )
 
-        if self._is_handoff_requested(text, ai_data):
+        if ConversationPolicy.is_handoff_requested(text, ai_data):
             self._handoff(conversation)
             return ""
-
-        if self._should_send_welcome(conversation, customer, application, text, ai_data):
-            response = self._build_welcome_response()
-            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
-            return response
-
-        if ai_data.get("intent") == "consulta":
-            history = self._build_ai_history(conversation.id)
-            if history and history[-1].get("role") == "user":
-                history = history[:-1]
-
-            response = self.ai.generate_whatsapp_reply(
-                text=text,
-                history=history,
-                db=self.db,
+        if ConversationPolicy.should_send_welcome(
+            conversation,
+            customer,
+            application,
+            text,
+            ai_data,
+        ):
+            return self._save_outbound(
+                conversation.id,
+                ConversationPolicy.welcome_response(),
             )
-            if response:
-                self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
-                return response
+        if ai_data.get("intent") == "consulta":
+            ai_response = self._generate_ai_response(conversation.id, text)
+            if ai_response:
+                return self._save_outbound(conversation.id, ai_response)
 
-        faq_response = self._answer_faq_if_applicable(text)
+        faq_response = self.faq_service.answer(text)
         if faq_response:
-            self._save_message(conversation.id, "OUTBOUND", faq_response, "TEXT")
-            return faq_response
+            return self._save_outbound(conversation.id, faq_response)
 
-        self.credit_service.apply_extracted_data(
-            customer=customer,
-            application=application,
-            data=ai_data,
-            db=self.db,
+        return self._continue_credit_flow(
+            conversation,
+            customer,
+            application,
+            text,
+            ai_data,
         )
 
+    def _continue_credit_flow(
+        self,
+        conversation,
+        customer,
+        application,
+        text: str,
+        ai_data: dict,
+    ) -> str:
+        self.credit_service.apply_extracted_data(customer, application, ai_data, self.db)
         evaluation = self.credit_service.evaluate_if_complete(
             application,
             customer=customer,
@@ -148,226 +143,63 @@ class ConversationOrchestrator:
                 result=evaluation["result"],
                 reason=evaluation["reason"],
             )
-
             conversation.result = evaluation["result"]
-            self.db.commit()
-
             self._change_state(
-                conversation=conversation,
-                new_state=ConversationState.SHOW_RESULT.value,
-                reason="Solicitud completa y evaluada",
+                conversation,
+                ConversationState.SHOW_RESULT.value,
+                "Solicitud completa y evaluada",
             )
-
-            response = self._build_result_response(evaluation, customer, application)
-            response = self._polish_response(response, user_text=text, use_ai=True)
-            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
-            return response
+            response = self.responses.build_result_response(
+                evaluation,
+                customer,
+                application,
+            )
+            return self._save_outbound(
+                conversation.id,
+                self._polish_response(response, text, use_ai=True),
+            )
 
         missing_field = self.state_service.get_next_required_field(customer, application)
-
         if missing_field:
-            new_state = self.state_service.state_for_missing_field(missing_field)
-
             self._change_state(
-                conversation=conversation,
-                new_state=new_state,
-                reason=f"Falta el campo requerido: {missing_field}",
+                conversation,
+                self.state_service.state_for_missing_field(missing_field),
+                f"Falta el campo requerido: {missing_field}",
+            )
+            question = self.responses.question_for_field(
+                missing_field,
+                customer,
+                application,
+            )
+            return self._save_outbound(
+                conversation.id,
+                self._polish_response(question, text, use_ai=False),
             )
 
-            response = self._question_for_field(missing_field, customer, application)
-            response = self._polish_response(response, user_text=text, use_ai=False)
-            self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
-            return response
-
-        response = self._build_already_registered_response(customer, application)
-        response = self._polish_response(response, user_text=text, use_ai=True)
-        self._save_message(conversation.id, "OUTBOUND", response, "TEXT")
-        return response
-
-    def _question_for_field(self, field: str, customer, application) -> str:
-        if field == "national_id":
-            return (
-                "Hola, que gusto saludarte. Soy CrediBot y te ayudare con tu precalificacion de credito. "
-                "Para revisar tu perfil en la central de riesgo simulada, me compartes tu cedula de 10 digitos?"
-            )
-
-        if field == "full_name":
-            return (
-                "Gracias. No encontre un nombre asociado a esa cedula en la central simulada. "
-                "Me compartes tu nombre completo?"
-            )
-
-        if field == "amount":
-            if customer.full_name:
-                return (
-                    f"Es un gusto hablar contigo, {customer.full_name}. "
-                    "Para continuar con tu precalificacion, que monto deseas solicitar en dolares?"
-                )
-
-            return "Perfecto, para avanzar dime que monto deseas solicitar en dolares."
-
-        if field == "term_months":
-            if application.amount is not None:
-                return (
-                    f"Excelente, ya tengo registrado un monto de {self._format_currency(application.amount)}. "
-                    "Ahora cuentame en cuantos meses te gustaria pagarlo."
-                )
-
-            return "Perfecto, en cuantos meses te gustaria pagar el credito?"
-
-        if field == "monthly_income":
-            details = []
-            if application.amount is not None:
-                details.append(f"un monto de {self._format_currency(application.amount)}")
-            if application.term_months is not None:
-                details.append(f"un plazo de {application.term_months} meses")
-
-            if details:
-                detail_text = self._human_join(details)
-                return (
-                    f"Super, ya tengo {detail_text}. "
-                    "Para cerrar tu precalificacion, cual es tu ingreso mensual aproximado en dolares?"
-                )
-
-            return "Gracias. Para cerrar tu precalificacion, cual es tu ingreso mensual aproximado en dolares?"
-
-        return "Cuentame un poco mas para poder ayudarte mejor con tu solicitud."
-
-    def _build_result_response(self, evaluation: dict, customer, application) -> str:
-        profile_details = self._profile_snapshot(customer, application)
-        result_label = self._human_result_label(evaluation.get("result"))
-        reason = (evaluation.get("reason") or "").strip()
-
-        if profile_details:
-            return (
-                f"Listo, con la informacion que me compartiste ({profile_details}), "
-                f"tu resultado preliminar es {result_label}. "
-                f"Motivo: {reason}. "
-                "Si deseas, tambien puedo derivarte con un asesor humano."
-            )
-
-        return (
-            f"Listo, tu resultado preliminar es {result_label}. "
-            f"Motivo: {reason}. "
-            "Si deseas, tambien puedo derivarte con un asesor humano."
+        response = self.responses.build_already_registered_response(customer, application)
+        return self._save_outbound(
+            conversation.id,
+            self._polish_response(response, text, use_ai=True),
         )
 
-    def _handoff(self, conversation):
+    def _answer_with_ai(self, conversation_id: int, text: str) -> str:
+        response = self._generate_ai_response(conversation_id, text)
+        return self._save_outbound(conversation_id, response)
+
+    def _generate_ai_response(self, conversation_id: int, text: str) -> str:
+        history = build_ai_history(self.message_repo, conversation_id)
+        if history and history[-1].get("role") == "user":
+            history = history[:-1]
+        return self.ai.generate_whatsapp_reply(text=text, history=history, db=self.db)
+
+    def _handoff(self, conversation) -> None:
         self._change_state(
-            conversation=conversation,
-            new_state=ConversationState.HANDOFF.value,
-            reason="Usuario solicito hablar con asesor humano",
+            conversation,
+            ConversationState.HANDOFF.value,
+            "Usuario solicito hablar con asesor humano",
         )
-
         conversation.status = "HANDOFF"
-        self.db.commit()
-
-    def _is_handoff_requested(self, text: str, ai_data: dict) -> bool:
-        if ai_data.get("intent") == "asesor":
-            return True
-
-        normalized = text.lower()
-        return any(
-            word in normalized
-            for word in ["asesor", "humano", "persona", "agente", "ejecutivo"]
-        )
-
-    def _should_send_welcome(self, conversation, customer, application, text: str, ai_data: dict) -> bool:
-        if conversation.current_state != ConversationState.START.value:
-            return False
-
-        if ai_data.get("intent") != "saludo":
-            return False
-
-        if not self._is_plain_greeting(text):
-            return False
-
-        has_profile_data = any([
-            bool(customer.full_name),
-            application.amount is not None,
-            application.term_months is not None,
-            application.monthly_income is not None,
-        ])
-
-        return not has_profile_data
-
-    def _is_plain_greeting(self, text: str) -> bool:
-        normalized = (text or "").lower().strip()
-        normalized = "".join(
-            char
-            for char in unicodedata.normalize("NFD", normalized)
-            if unicodedata.category(char) != "Mn"
-        )
-        normalized = re.sub(r"[^a-z\s]", " ", normalized)
-        normalized = re.sub(r"\s+", " ", normalized).strip()
-
-        greetings = {
-            "hola",
-            "buenas",
-            "buen dia",
-            "buenos dias",
-            "buenas tardes",
-            "buenas noches",
-            "saludos",
-            "hey",
-        }
-        polite_suffixes = {
-            "hola buen dia",
-            "hola buenos dias",
-            "hola buenas",
-            "hola buenas tardes",
-            "hola buenas noches",
-            "hola que tal",
-        }
-
-        return normalized in greetings or normalized in polite_suffixes
-
-    def _build_welcome_response(self) -> str:
-        return (
-            "Hola, soy CrediBot. Te puedo ayudar con una precalificacion de credito, "
-            "resolver dudas sobre requisitos o derivarte con un asesor. "
-            "En que te puedo ayudar?"
-        )
-
-    def _answer_faq_if_applicable(self, text: str) -> str:
-        normalized = (text or "").lower().strip()
-        if not normalized:
-            return ""
-
-        question_markers = [
-            "?",
-            "¿",
-            "requisito",
-            "documento",
-            "politica",
-            "política",
-            "tasa",
-            "interes",
-            "interés",
-            "condicion",
-            "condición",
-            "plazo maximo",
-            "plazo máximo",
-            "pago anticipado",
-        ]
-
-        if not any(marker in normalized for marker in question_markers):
-            return ""
-
-        faq = RetrievalService(self.db).best_match(text)
-        if not faq:
-            return ""
-
-        base_response = (
-            f"{faq.answer} "
-            "Si quieres, tambien puedo ayudarte con tu precalificacion de credito."
-        )
-        faq_context = f"Pregunta: {faq.question}\nRespuesta: {faq.answer}"
-        return self.ai.response_generator.generate(
-            base_message=base_response,
-            last_user_message=text,
-            faq_context=faq_context,
-        )
+        self.db.flush()
 
     def _save_message(
         self,
@@ -376,28 +208,28 @@ class ConversationOrchestrator:
         content: str,
         message_type: str = "TEXT",
     ):
-        self.message_repo.save_message(
+        return self.message_repo.save_message(
             conversation_id=conversation_id,
             direction=direction,
             content=content,
             message_type=message_type,
         )
 
+    def _save_outbound(self, conversation_id: int, response: str) -> str:
+        self._save_message(conversation_id, "OUTBOUND", response, "TEXT")
+        return response
+
     def _change_state(self, conversation, new_state: str, reason: str):
         current = conversation.current_state
-
         if current != new_state and not can_transition(current, new_state):
             allowed = self.state_service.get_allowed_transition_names(current)
             raise ValueError(
-                f"Transicion invalida: {current} -> {new_state}. "
-                f"Transiciones permitidas: {allowed}"
+                f"Transicion invalida: {current} -> {new_state}. Transiciones permitidas: {allowed}"
             )
 
         conversation, previous_state, changed = self.conversation_repo.update_state_if_changed(
-            conversation,
-            new_state,
+            conversation, new_state
         )
-
         if changed:
             self.state_history_repo.save_transition(
                 conversation_id=conversation.id,
@@ -405,24 +237,91 @@ class ConversationOrchestrator:
                 new_state=new_state,
                 reason=reason,
             )
-
         return conversation
 
-    def _build_ai_history(self, conversation_id: int, limit: int = 8) -> list[dict]:
-        rows = self.message_repo.get_recent_messages(
-            conversation_id=conversation_id,
-            limit=limit,
+    def _polish_response(self, response: str, user_text: str, use_ai: bool = True) -> str:
+        final_response = (response or "").strip()
+        if use_ai:
+            final_response = (
+                self.ai.improve_response(
+                    message=response,
+                    last_user_message=user_text,
+                )
+                or response
+                or ""
+            ).strip()
+        return self.responses.sanitize(final_response, user_text)
+
+    # Delegaciones pequeñas conservan la API usada por pruebas y extensiones.
+    def _component_responses(self) -> ConversationResponseBuilder:
+        if not hasattr(self, "responses"):
+            self.responses = ConversationResponseBuilder()
+        return self.responses
+
+    def _component_input(self) -> ConversationInputExtractor:
+        if not hasattr(self, "input_extractor"):
+            self.state_service = getattr(self, "state_service", ConversationStateService())
+            self.credit_service = getattr(self, "credit_service", CreditApplicationService())
+            self.input_extractor = ConversationInputExtractor(
+                self.state_service,
+                self.credit_service,
+            )
+        return self.input_extractor
+
+    def _question_for_field(self, field: str, customer, application) -> str:
+        return self._component_responses().question_for_field(field, customer, application)
+
+    def _build_result_response(self, evaluation: dict, customer, application) -> str:
+        return self._component_responses().build_result_response(
+            evaluation,
+            customer,
+            application,
         )
-        history: list[dict] = []
 
-        for row in reversed(rows):
-            role = "assistant" if row.direction == "OUTBOUND" else "user"
-            content = (row.content or "").strip()
+    def _build_already_registered_response(self, customer, application) -> str:
+        return self._component_responses().build_already_registered_response(
+            customer,
+            application,
+        )
 
-            if content:
-                history.append({"role": role, "content": content})
+    def _profile_snapshot(self, customer, application) -> str:
+        return self._component_responses().profile_snapshot(customer, application)
 
-        return history
+    def _human_result_label(self, result: str | None) -> str:
+        return self._component_responses().human_result_label(result)
+
+    def _human_join(self, items: list[str]) -> str:
+        return self._component_responses().human_join(items)
+
+    def _sanitize_response(self, response: str, user_text: str) -> str:
+        return self._component_responses().sanitize(response, user_text)
+
+    def _format_currency(self, value) -> str:
+        return self._component_responses().format_currency(value)
+
+    def _is_handoff_requested(self, text: str, ai_data: dict) -> bool:
+        return ConversationPolicy.is_handoff_requested(text, ai_data)
+
+    def _should_send_welcome(self, conversation, customer, application, text, ai_data):
+        return ConversationPolicy.should_send_welcome(
+            conversation,
+            customer,
+            application,
+            text,
+            ai_data,
+        )
+
+    def _is_plain_greeting(self, text: str) -> bool:
+        return ConversationPolicy.is_plain_greeting(text)
+
+    def _build_welcome_response(self) -> str:
+        return ConversationPolicy.welcome_response()
+
+    def _answer_faq_if_applicable(self, text: str) -> str:
+        return self.faq_service.answer(text)
+
+    def _build_ai_history(self, conversation_id: int, limit: int = 8) -> list[dict]:
+        return build_ai_history(self.message_repo, conversation_id, limit)
 
     def _enrich_extracted_data(
         self,
@@ -432,236 +331,28 @@ class ConversationOrchestrator:
         text: str,
         ai_data: dict,
     ) -> dict:
-        enriched = dict(ai_data or {})
-
-        expected_field = self._expected_field(conversation, customer, application)
-        if not expected_field:
-            return enriched
-
-        if enriched.get(expected_field):
-            return enriched
-
-        if expected_field == "national_id":
-            fallback_id = self._extract_national_id(text)
-            if fallback_id:
-                enriched["national_id"] = fallback_id
-            return enriched
-
-        if expected_field == "full_name":
-            fallback_name = self._extract_name(text)
-            if fallback_name:
-                enriched["full_name"] = fallback_name
-            return enriched
-
-        if expected_field == "term_months":
-            fallback_term = self._extract_term_months(text)
-            if fallback_term is not None:
-                enriched["term_months"] = fallback_term
-            return enriched
-
-        if expected_field in {"amount", "monthly_income"}:
-            fallback_amount = self._extract_decimal(text)
-            if fallback_amount is not None:
-                enriched[expected_field] = str(fallback_amount)
-
-        return enriched
+        return self._component_input().enrich(
+            conversation,
+            customer,
+            application,
+            text,
+            ai_data,
+        )
 
     def _expected_field(self, conversation, customer, application) -> str | None:
-        by_state = {
-            ConversationState.ASK_NATIONAL_ID.value: "national_id",
-            ConversationState.ASK_NAME.value: "full_name",
-            ConversationState.ASK_AMOUNT.value: "amount",
-            ConversationState.ASK_TERM.value: "term_months",
-            ConversationState.ASK_INCOME.value: "monthly_income",
-        }
-
-        state_field = by_state.get(conversation.current_state)
-        if state_field:
-            return state_field
-
-        return self.state_service.get_next_required_field(customer, application)
+        return self._component_input().expected_field(conversation, customer, application)
 
     def _extract_national_id(self, text: str) -> str | None:
-        value = (text or "").strip()
-        if not value:
-            return None
-
-        match = re.search(r"\b\d{10}\b", value)
-        if not match:
-            return None
-
-        return match.group(0)
+        return self._component_input().extract_national_id(text)
 
     def _extract_name(self, text: str) -> str | None:
-        value = (text or "").strip()
-        if not value:
-            return None
-
-        if re.search(r"\d", value):
-            return None
-
-        cleaned = re.sub(r"[^A-Za-zÁÉÍÓÚáéíóúÑñÜü\s]", " ", value)
-        cleaned = re.sub(r"\s+", " ", cleaned).strip()
-
-        if len(cleaned) < 2:
-            return None
-
-        blacklist = {"hola", "buenas", "gracias", "ok", "credito"}
-        if cleaned.lower() in blacklist:
-            return None
-
-        if not self.credit_service.is_valid_person_name(cleaned):
-            return None
-
-        return cleaned[:120]
-
-    def _clear_invalid_customer_name(self, customer):
-        full_name = (getattr(customer, "full_name", "") or "").strip()
-        if not full_name:
-            return
-
-        if self.credit_service.is_valid_person_name(full_name):
-            return
-
-        customer.full_name = None
-        self.db.commit()
+        return self._component_input().extract_name(text)
 
     def _extract_decimal(self, text: str):
-        value = (text or "").strip()
-        if not value:
-            return None
-
-        match = re.search(r"\d[\d\.,]*", value)
-        if not match:
-            return None
-
-        raw = match.group(0)
-        normalized = raw.replace(",", "").replace(" ", "")
-
-        try:
-            return Decimal(normalized)
-        except InvalidOperation:
-            return None
+        return self._component_input().extract_decimal(text)
 
     def _extract_term_months(self, text: str) -> int | None:
-        value = (text or "").lower().strip()
-        if not value:
-            return None
+        return self._component_input().extract_term_months(text)
 
-        match = re.search(r"\d+", value)
-        if not match:
-            return None
-
-        number = int(match.group(0))
-        if number <= 0:
-            return None
-
-        if any(token in value for token in ["ano", "anos", "year", "years"]):
-            return number * 12
-
-        return number
-
-    def _build_already_registered_response(self, customer, application) -> str:
-        profile_details = self._profile_snapshot(customer, application)
-        if profile_details:
-            return (
-                f"Tu solicitud ya fue registrada con estos datos: {profile_details}. "
-                "Si quieres continuar o ajustar algo, lo revisamos juntos. "
-                "Tambien puedes escribir asesor para hablar con una persona."
-            )
-
-        return (
-            "Tu solicitud ya fue registrada. "
-            "Si quieres, tambien puedo derivarte con un asesor humano."
-        )
-
-    def _profile_snapshot(self, customer, application) -> str:
-        details: list[str] = []
-
-        if customer.full_name:
-            details.append(f"nombre {customer.full_name}")
-
-        if getattr(customer, "national_id", None):
-            details.append(f"cedula {customer.national_id}")
-
-        if application.amount is not None:
-            details.append(f"monto de {self._format_currency(application.amount)}")
-
-        if application.term_months is not None:
-            details.append(f"plazo de {application.term_months} meses")
-
-        if application.monthly_income is not None:
-            details.append(f"ingresos mensuales de {self._format_currency(application.monthly_income)}")
-
-        return self._human_join(details)
-
-    def _human_result_label(self, result: str | None) -> str:
-        normalized = (result or "").strip().upper()
-        labels = {
-            "PREAPROBADO": "preaprobado",
-            "OBSERVADO": "observado",
-            "RECHAZADO": "rechazado",
-        }
-
-        if normalized in labels:
-            return labels[normalized]
-
-        return normalized.lower() if normalized else "sin resultado"
-
-    def _human_join(self, items: list[str]) -> str:
-        clean_items = [item.strip() for item in items if (item or "").strip()]
-        if not clean_items:
-            return ""
-
-        if len(clean_items) == 1:
-            return clean_items[0]
-
-        if len(clean_items) == 2:
-            return f"{clean_items[0]} y {clean_items[1]}"
-
-        return f"{', '.join(clean_items[:-1])} y {clean_items[-1]}"
-
-    def _polish_response(self, response: str, user_text: str, use_ai: bool = True) -> str:
-        final_response = (response or "").strip()
-
-        if use_ai:
-            improved = self.ai.improve_response(
-                message=response,
-                last_user_message=user_text,
-            )
-            final_response = (improved or response or "").strip()
-
-        return self._sanitize_response(final_response, user_text=user_text)
-
-    def _sanitize_response(self, response: str, user_text: str) -> str:
-        cleaned = (response or "").strip()
-        if not cleaned:
-            return cleaned
-
-        normalized_user = (user_text or "").lower()
-        user_thanked = any(
-            token in normalized_user
-            for token in ["gracias", "agradezco", "thank you", "thanks"]
-        )
-
-        if not user_thanked:
-            cleaned = re.sub(
-                r"^\s*(de nada|no hay de que|con gusto|a la orden|encantado de ayudarte|un gusto ayudarte)[\s,:\-\.!]*",
-                "",
-                cleaned,
-                flags=re.IGNORECASE,
-            ).strip()
-
-        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-
-        return cleaned.strip()
-
-    def _format_currency(self, value) -> str:
-        try:
-            number = float(value)
-        except (TypeError, ValueError):
-            return str(value)
-
-        formatted = f"{number:,.2f}"
-        return f"${formatted}"
+    def _clear_invalid_customer_name(self, customer) -> None:
+        self._component_input().clear_invalid_customer_name(customer)

@@ -1,5 +1,7 @@
-import { AppBar, Avatar, Box, Chip, Toolbar, Typography } from "@mui/material";
-import { useLocation } from "react-router-dom";
+import LogoutIcon from "@mui/icons-material/Logout";
+import { AppBar, Avatar, Box, Chip, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
+import { useLocation, useNavigate } from "react-router-dom";
+import { AuthService } from "../../services/auth.service";
 
 const pageTitles: Record<string, { title: string; subtitle: string }> = {
   "/panel": {
@@ -26,7 +28,13 @@ const pageTitles: Record<string, { title: string; subtitle: string }> = {
 
 export function TopBar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const page = pageTitles[location.pathname] ?? pageTitles["/conversaciones"];
+
+  function logout() {
+    AuthService.logout();
+    navigate("/login");
+  }
 
   return (
     <AppBar
@@ -52,6 +60,11 @@ export function TopBar() {
         <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
           <Chip label="En linea" color="success" size="small" />
           <Avatar sx={{ bgcolor: "#0F766E", fontWeight: 800 }}>A</Avatar>
+          <Tooltip title="Cerrar sesion">
+            <IconButton aria-label="Cerrar sesion" onClick={logout}>
+              <LogoutIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
       </Toolbar>
     </AppBar>

@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class ConversationState(str, Enum):
+class ConversationState(StrEnum):
     START = "START"
     ASK_NATIONAL_ID = "ASK_NATIONAL_ID"
     ASK_NAME = "ASK_NAME"

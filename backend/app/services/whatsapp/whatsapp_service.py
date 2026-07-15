@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
 
 from app.config.settings import settings
-from app.services.conversation.orchestrator import ConversationOrchestrator
 from app.services.ai.ai_orchestrator import AIOrchestrator
+from app.services.conversation.orchestrator import ConversationOrchestrator
 
 
 class WhatsAppService:

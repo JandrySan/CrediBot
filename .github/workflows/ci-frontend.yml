@@ -12,6 +12,8 @@ jobs:
   validar-frontend:
     name: Probar build del dashboard
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     defaults:
       run:
@@ -19,10 +21,10 @@ jobs:
 
     steps:
       - name: Descargar codigo
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Preparar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -33,6 +35,9 @@ jobs:
 
       - name: Ejecutar lint
         run: npm run lint
+
+      - name: Ejecutar pruebas
+        run: npm test
 
       - name: Compilar frontend
         run: npm run build

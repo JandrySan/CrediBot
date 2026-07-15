@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
-from app.models.customer import Customer
 from app.models.credit_application import CreditApplication
+from app.models.customer import Customer
 from app.services.tools.tool_registry import tool
 
 
@@ -24,11 +24,7 @@ from app.services.tools.tool_registry import tool
     requires_db=True,
 )
 def consultar_estado_cliente(telefono: str, db: Session) -> dict:
-    customer = (
-        db.query(Customer)
-        .filter(Customer.phone_number == telefono)
-        .first()
-    )
+    customer = db.query(Customer).filter(Customer.phone_number == telefono).first()
 
     if not customer:
         return {
@@ -45,15 +41,17 @@ def consultar_estado_cliente(telefono: str, db: Session) -> dict:
 
     solicitudes = []
     for app in applications:
-        solicitudes.append({
-            "id": app.id,
-            "monto": float(app.amount) if app.amount else None,
-            "plazo_meses": app.term_months,
-            "ingreso_mensual": float(app.monthly_income) if app.monthly_income else None,
-            "resultado": app.result,
-            "motivo": app.reason,
-            "fecha": str(app.created_at) if app.created_at else None,
-        })
+        solicitudes.append(
+            {
+                "id": app.id,
+                "monto": float(app.amount) if app.amount else None,
+                "plazo_meses": app.term_months,
+                "ingreso_mensual": float(app.monthly_income) if app.monthly_income else None,
+                "resultado": app.result,
+                "motivo": app.reason,
+                "fecha": str(app.created_at) if app.created_at else None,
+            }
+        )
 
     return {
         "encontrado": True,

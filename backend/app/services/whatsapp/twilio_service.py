@@ -1,6 +1,7 @@
+import time
+
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
-import time
 
 from app.config.settings import settings
 
@@ -8,9 +9,7 @@ from app.config.settings import settings
 class TwilioWhatsAppService:
     def __init__(self):
         self.enabled = bool(
-            settings.TWILIO_ENABLED
-            and settings.TWILIO_ACCOUNT_SID
-            and settings.TWILIO_AUTH_TOKEN
+            settings.TWILIO_ENABLED and settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN
         )
         self.client = None
         self._config_error = None
@@ -42,7 +41,8 @@ class TwilioWhatsAppService:
         if not self.enabled:
             return {
                 "success": False,
-                "message": self._config_error or (
+                "message": self._config_error
+                or (
                     "Twilio está desactivado. Configura TWILIO_ENABLED=true y las credenciales en .env"
                 ),
             }
@@ -53,21 +53,18 @@ class TwilioWhatsAppService:
         if not from_number:
             return {
                 "success": False,
-                "message": "No hay un número de WhatsApp configurado en Twilio"
+                "message": "No hay un número de WhatsApp configurado en Twilio",
             }
 
         if not to_number:
-            return {
-                "success": False,
-                "message": "El número de destino no es válido"
-            }
+            return {"success": False, "message": "El número de destino no es válido"}
+
+        client = self.client
+        if client is None:
+            return {"success": False, "message": "Cliente de Twilio no inicializado"}
 
         try:
-            message = self.client.messages.create(
-                from_=from_number,
-                to=to_number,
-                body=body
-            )
+            message = client.messages.create(from_=from_number, to=to_number, body=body)
             status_result = self._wait_for_send_status(message.sid, message)
             if not status_result["success"]:
                 return status_result
@@ -97,13 +94,14 @@ class TwilioWhatsAppService:
                 "message": str(exc),
                 "error_code": error_code,
             }
-        except Exception as exc:  # pragma: no cover - defensive fallback
-            return {
-                "success": False,
-                "message": str(exc)
-            }
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            return {"success": False, "message": str(exc)}
 
     def _wait_for_send_status(self, message_sid: str, initial_message):
+        client = self.client
+        if client is None:
+            return {"success": False, "message": "Cliente de Twilio no inicializado"}
+
         status = (getattr(initial_message, "status", "") or "").lower()
         error_code = getattr(initial_message, "error_code", None)
         error_message = getattr(initial_message, "error_message", None)
@@ -132,7 +130,7 @@ class TwilioWhatsAppService:
                 return {"success": True, "sid": message_sid, "status": status}
 
             time.sleep(1)
-            fetched = self.client.messages(message_sid).fetch()
+            fetched = client.messages(message_sid).fetch()
             status = (getattr(fetched, "status", "") or "").lower()
             error_code = getattr(fetched, "error_code", None)
             error_message = getattr(fetched, "error_message", None)
@@ -160,11 +158,7 @@ class TwilioWhatsAppService:
         return error_message or "Twilio no pudo entregar el mensaje de WhatsApp."
 
     def _get_from_number(self) -> str:
-        return (
-            getattr(settings, "TWILIO_WHATSAPP_FROM", None)
-            or getattr(settings, "TWILIO_WHATSAPP_NUMBER", None)
-            or ""
-        ).strip()
+        return (settings.TWILIO_WHATSAPP_FROM or "").strip()
 
     @staticmethod
     def _normalize_phone_number(phone_number: str) -> str:

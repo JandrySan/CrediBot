@@ -23,7 +23,7 @@ class CreditApplicationRepository:
 
         application = CreditApplication(customer_id=customer_id)
         self.db.add(application)
-        self.db.commit()
+        self.db.flush()
         self.db.refresh(application)
 
         return application
@@ -32,7 +32,7 @@ class CreditApplicationRepository:
         for key, value in kwargs.items():
             setattr(application, key, value)
 
-        self.db.commit()
+        self.db.flush()
         self.db.refresh(application)
 
         return application

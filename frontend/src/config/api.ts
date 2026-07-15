@@ -15,10 +15,6 @@ function normalizeHttpBaseUrl(value: string | undefined): string {
 }
 
 function buildWebSocketBaseUrl(apiBaseUrl: string): string {
-  if (import.meta.env.VITE_WS_BASE_URL) {
-    return import.meta.env.VITE_WS_BASE_URL.replace(/\/+$/, "");
-  }
-
   return apiBaseUrl.replace(/^http/, "ws");
 }
 

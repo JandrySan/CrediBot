@@ -1,0 +1,1 @@
+"""Rutas especializadas del dashboard."""

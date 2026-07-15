@@ -1,10 +1,10 @@
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.database.base import Base
 from app.models.ai_analysis import AIAnalysis
@@ -44,8 +44,8 @@ class ConversationRepositoryTests(unittest.TestCase):
                 customer_id=1,
                 status="ACTIVE",
                 current_state="ASK_AMOUNT",
-                created_at=datetime.now(timezone.utc) - timedelta(minutes=30),
-                updated_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+                created_at=datetime.now(UTC) - timedelta(minutes=30),
+                updated_at=datetime.now(UTC) - timedelta(minutes=30),
             )
             db.add(expired)
             db.commit()
@@ -71,8 +71,8 @@ class ConversationRepositoryTests(unittest.TestCase):
                 customer_id=2,
                 status="ACTIVE",
                 current_state="ASK_INCOME",
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             db.add(active)
             db.commit()
@@ -95,15 +95,15 @@ class ConversationRepositoryTests(unittest.TestCase):
                 customer_id=3,
                 status="ACTIVE",
                 current_state="ASK_NAME",
-                created_at=datetime.now(timezone.utc) - timedelta(minutes=90),
-                updated_at=datetime.now(timezone.utc) - timedelta(minutes=90),
+                created_at=datetime.now(UTC) - timedelta(minutes=90),
+                updated_at=datetime.now(UTC) - timedelta(minutes=90),
             )
             fresh_active = Conversation(
                 customer_id=4,
                 status="ACTIVE",
                 current_state="ASK_NAME",
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             db.add_all([old_active, fresh_active])
             db.commit()
@@ -129,24 +129,24 @@ class ConversationRepositoryTests(unittest.TestCase):
                 status="CLOSED",
                 current_state="END",
                 result="EXPIRADO",
-                created_at=datetime.now(timezone.utc) - timedelta(days=10),
-                updated_at=datetime.now(timezone.utc) - timedelta(days=10),
+                created_at=datetime.now(UTC) - timedelta(days=10),
+                updated_at=datetime.now(UTC) - timedelta(days=10),
             )
             fresh_abandoned = Conversation(
                 customer_id=6,
                 status="CLOSED",
                 current_state="END",
                 result="EXPIRADO",
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             advisor_closed = Conversation(
                 customer_id=7,
                 status="CLOSED",
                 current_state="END",
                 result="RESUELTO_ASESOR",
-                created_at=datetime.now(timezone.utc) - timedelta(days=10),
-                updated_at=datetime.now(timezone.utc) - timedelta(days=10),
+                created_at=datetime.now(UTC) - timedelta(days=10),
+                updated_at=datetime.now(UTC) - timedelta(days=10),
             )
             db.add_all([old_abandoned, fresh_abandoned, advisor_closed])
             db.commit()
@@ -154,26 +154,28 @@ class ConversationRepositoryTests(unittest.TestCase):
             db.refresh(fresh_abandoned)
             db.refresh(advisor_closed)
 
-            db.add_all([
-                Message(
-                    conversation_id=old_abandoned.id,
-                    direction="INBOUND",
-                    message_type="TEXT",
-                    content="hola",
-                ),
-                AIAnalysis(
-                    conversation_id=old_abandoned.id,
-                    intent="saludo",
-                    extracted_data="{}",
-                    model_used="test",
-                ),
-                ConversationStateHistory(
-                    conversation_id=old_abandoned.id,
-                    previous_state="ASK_NAME",
-                    new_state="END",
-                    reason="expirada",
-                ),
-            ])
+            db.add_all(
+                [
+                    Message(
+                        conversation_id=old_abandoned.id,
+                        direction="INBOUND",
+                        message_type="TEXT",
+                        content="hola",
+                    ),
+                    AIAnalysis(
+                        conversation_id=old_abandoned.id,
+                        intent="saludo",
+                        extracted_data="{}",
+                        model_used="test",
+                    ),
+                    ConversationStateHistory(
+                        conversation_id=old_abandoned.id,
+                        previous_state="ASK_NAME",
+                        new_state="END",
+                        reason="expirada",
+                    ),
+                ]
+            )
             db.commit()
             old_abandoned_id = old_abandoned.id
             fresh_abandoned_id = fresh_abandoned.id
@@ -202,8 +204,8 @@ class ConversationRepositoryTests(unittest.TestCase):
                 status="CLOSED",
                 current_state="END",
                 result="EXPIRADO",
-                created_at=datetime.now(timezone.utc) - timedelta(days=10),
-                updated_at=datetime.now(timezone.utc) - timedelta(days=10),
+                created_at=datetime.now(UTC) - timedelta(days=10),
+                updated_at=datetime.now(UTC) - timedelta(days=10),
             )
             db.add(old_abandoned)
             db.commit()
@@ -227,15 +229,15 @@ class ConversationRepositoryTests(unittest.TestCase):
                 status="CLOSED",
                 current_state="END",
                 result="RESUELTO_ASESOR",
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             active_empty = Conversation(
                 customer_id=10,
                 status="ACTIVE",
                 current_state="START",
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             db.add_all([closed_empty, active_empty])
             db.commit()
@@ -256,8 +258,20 @@ class ConversationRepositoryTests(unittest.TestCase):
 def _session():
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=engine)
-    testing_session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    testing_session = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=engine,
+        class_=_DisposableSession,
+    )
     return testing_session()
+
+
+class _DisposableSession(Session):
+    def close(self) -> None:
+        bind = self.get_bind()
+        super().close()
+        bind.dispose()
 
 
 if __name__ == "__main__":

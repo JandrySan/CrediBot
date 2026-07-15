@@ -37,11 +37,7 @@ class RetrievalService:
 
         blocks = []
         for index, faq in enumerate(results, start=1):
-            blocks.append(
-                f"FAQ {index}\n"
-                f"Pregunta: {faq.question}\n"
-                f"Respuesta: {faq.answer}"
-            )
+            blocks.append(f"FAQ {index}\nPregunta: {faq.question}\nRespuesta: {faq.answer}")
 
         return "\n\n".join(blocks)
 
@@ -81,8 +77,7 @@ class RetrievalService:
             return []
 
         candidate_text = "\n".join(
-            f"{faq.id}. {faq.question}\nRespuesta: {faq.answer}"
-            for faq in candidates
+            f"{faq.id}. {faq.question}\nRespuesta: {faq.answer}" for faq in candidates
         )
 
         result = self.ai.generate_json(
@@ -125,7 +120,21 @@ class RetrievalService:
         normalized = normalized.replace("í", "i").replace("ó", "o").replace("ú", "u")
         raw_tokens = re.findall(r"[a-z0-9]+", normalized)
         stopwords = {
-            "para", "como", "cual", "cuales", "que", "los", "las", "una", "con",
-            "por", "del", "tengo", "quiero", "puedo", "necesito", "sobre",
+            "para",
+            "como",
+            "cual",
+            "cuales",
+            "que",
+            "los",
+            "las",
+            "una",
+            "con",
+            "por",
+            "del",
+            "tengo",
+            "quiero",
+            "puedo",
+            "necesito",
+            "sobre",
         }
         return [token for token in raw_tokens if len(token) > 2 and token not in stopwords]

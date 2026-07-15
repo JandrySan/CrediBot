@@ -9,10 +9,6 @@ on:
       - ".github/workflows/cd-frontend-aws.yml"
   workflow_dispatch:
 
-permissions:
-  contents: read
-  id-token: write
-
 env:
   AWS_REGION: ${{ vars.AWS_REGION || secrets.AWS_REGION }}
   AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
@@ -24,6 +20,9 @@ jobs:
   publicar-frontend:
     name: Publicar frontend en S3 y CloudFront
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     defaults:
       run:
@@ -34,7 +33,7 @@ jobs:
         working-directory: .
         run: |
           missing=0
-          for name in AWS_REGION AWS_ROLE_ARN AWS_S3_FRONTEND_BUCKET AWS_CLOUDFRONT_DISTRIBUTION_ID; do
+          for name in AWS_REGION AWS_ROLE_ARN AWS_S3_FRONTEND_BUCKET AWS_CLOUDFRONT_DISTRIBUTION_ID FRONTEND_PUBLIC_URL; do
             if [ -z "${!name}" ]; then
               echo "::error::$name no esta configurada en GitHub Actions."
               missing=1
@@ -45,10 +44,10 @@ jobs:
           fi
 
       - name: Descargar codigo
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Preparar Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
           cache: npm
@@ -60,11 +59,14 @@ jobs:
       - name: Validar lint
         run: npm run lint
 
+      - name: Ejecutar pruebas
+        run: npm test
+
       - name: Compilar frontend
         run: npm run build
 
       - name: Configurar credenciales AWS por OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -82,9 +84,20 @@ jobs:
 
       - name: Invalidar CloudFront
         run: |
-          aws cloudfront create-invalidation \
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
             --distribution-id "$AWS_CLOUDFRONT_DISTRIBUTION_ID" \
-            --paths "/*" >/dev/null
+            --paths "/*" \
+            --query 'Invalidation.Id' \
+            --output text)
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "$AWS_CLOUDFRONT_DISTRIBUTION_ID" \
+            --id "$INVALIDATION_ID"
+
+      - name: Verificar frontend publicado
+        working-directory: .
+        run: |
+          HTML=$(curl --fail --silent --show-error "$FRONTEND_PUBLIC_URL")
+          echo "$HTML" | grep -q '<div id="root"></div>'
 
       - name: Resumen del despliegue
         working-directory: .

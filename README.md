@@ -2,7 +2,7 @@
 
 MVP de asistente de precalificacion de creditos por WhatsApp.
 
-Actualizado: 2026-07-13
+Actualizado: 2026-07-15
 
 ## Estado actual
 
@@ -210,9 +210,9 @@ En produccion, el workflow de backend fuerza:
 
 ```env
 AUDIO_REPLY_ENABLED=true
-AUDIO_REPLY_LANGUAGE=es
-AUDIO_REPLY_PUBLIC_BASE_URL=https://d30z3dsmpm7ctx.cloudfront.net
 ```
+
+El idioma es espanol y la URL de audio se deriva de `TWILIO_WEBHOOK_URL`.
 
 ## Dashboard
 
@@ -247,6 +247,11 @@ App:
 - `GET /`
 - `GET /health`
 
+Autenticacion:
+
+- `GET /api/auth/config`
+- `POST /api/auth/token`
+
 WhatsApp:
 
 - `POST /webhook/whatsapp`
@@ -269,6 +274,10 @@ WebSocket:
 
 - `GET /ws/dashboard`
 
+El dashboard usa JWT con roles `admin` y `advisor`. El WebSocket recibe el
+token en el parametro `token`. En desarrollo local se puede desactivar con
+`DASHBOARD_AUTH_ENABLED=false`; no debe desactivarse en produccion.
+
 ## Variables de entorno backend
 
 Archivo local:
@@ -287,7 +296,8 @@ Variables principales:
 
 ```env
 DATABASE_URL=
-SUPABASE_DATABASE_URL=
+RUN_DB_MIGRATIONS=true
+AUTO_CREATE_DB_SCHEMA=false
 GROQ_API_KEY=
 AI_ONLY_MODE=false
 
@@ -295,15 +305,20 @@ TWILIO_ENABLED=true
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
-TWILIO_WHATSAPP_NUMBER=+14155238886
 TWILIO_WEBHOOK_URL=https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp
+TWILIO_VALIDATE_SIGNATURE=true
+
+DASHBOARD_AUTH_ENABLED=true
+DASHBOARD_ADMIN_USERNAME=admin
+DASHBOARD_ADMIN_PASSWORD=
+DASHBOARD_ADVISOR_USERNAME=
+DASHBOARD_ADVISOR_PASSWORD=
+DASHBOARD_JWT_SECRET=
 
 AUDIO_STT_ENABLED=true
 AUDIO_STT_PROVIDER=groq
 AUDIO_STT_GROQ_MODEL=whisper-large-v3-turbo
 AUDIO_REPLY_ENABLED=true
-AUDIO_REPLY_LANGUAGE=es
-AUDIO_REPLY_PUBLIC_BASE_URL=https://d30z3dsmpm7ctx.cloudfront.net
 
 BACKEND_CORS_ORIGINS=https://d30z3dsmpm7ctx.cloudfront.net
 CONVERSATION_SESSION_TIMEOUT_MINUTES=60
@@ -322,7 +337,17 @@ Secrets usados en produccion:
 - `credibot/twilio-auth-token`
 - `credibot/twilio-webhook-url`
 - `credibot/twilio-whatsapp-from`
-- `credibot/twilio-whatsapp-number`
+- `credibot/dashboard-admin-password`
+- `credibot/dashboard-jwt-secret`
+
+GitHub solo conserva tres secrets: `AWS_ROLE_ARN`,
+`DASHBOARD_ADMIN_PASSWORD` y `DASHBOARD_JWT_SECRET`. Las credenciales de
+base de datos, Groq y Twilio viven exclusivamente en AWS Secrets Manager.
+
+Variables eliminadas por redundancia: `SUPABASE_DATABASE_URL`, `DB_HOST`,
+`DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `TWILIO_WHATSAPP_NUMBER`,
+`AUDIO_STT_LANGUAGE`, `AUDIO_REPLY_LANGUAGE`,
+`AUDIO_REPLY_PUBLIC_BASE_URL`, `APP_NAME` y `VITE_WS_BASE_URL`.
 
 ## Variables frontend
 
@@ -342,8 +367,9 @@ Variables:
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:8000
-VITE_WS_BASE_URL=ws://127.0.0.1:8000
 ```
+
+El WebSocket se deriva automaticamente de la URL de API.
 
 En produccion, si `VITE_API_BASE_URL` no se define, el frontend usa el mismo
 origen del navegador. Esto permite que `/api/*`, `/ws/*` y `/webhook/*` salgan
@@ -368,10 +394,18 @@ Desde la raiz del proyecto:
 cd backend
 python -m venv .venv
 .\.venv\Scripts\activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 ```
 
 Crear o actualizar `backend/.env` usando `backend/.env.example` como base.
+
+El inicio del backend ejecuta `alembic upgrade head` cuando
+`RUN_DB_MIGRATIONS=true`. Para aplicar o inspeccionar migraciones manualmente:
+
+```powershell
+python -m alembic upgrade head
+python -m alembic current
+```
 
 Para desarrollo rapido con SQLite:
 
@@ -383,7 +417,7 @@ $env:DEBUG="false"
 Para usar Supabase/PostgreSQL:
 
 ```env
-SUPABASE_DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:PORT/DB
+DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:PORT/DB
 ```
 
 Variables minimas recomendadas para probar el bot:
@@ -395,10 +429,10 @@ TWILIO_ENABLED=true
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
-TWILIO_WHATSAPP_NUMBER=+14155238886
 TWILIO_WEBHOOK_URL=https://TU_BACKEND_PUBLICO/webhook/whatsapp
+TWILIO_VALIDATE_SIGNATURE=true
 AUDIO_REPLY_ENABLED=true
-AUDIO_REPLY_PUBLIC_BASE_URL=https://TU_BACKEND_PUBLICO
+DASHBOARD_AUTH_ENABLED=false
 CONVERSATION_SESSION_TIMEOUT_MINUTES=60
 ABANDONED_CONVERSATION_RETENTION_DAYS=7
 ```
@@ -426,7 +460,6 @@ Crear `frontend/.env` si se quiere apuntar a un backend especifico:
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:8000
-VITE_WS_BASE_URL=ws://127.0.0.1:8000
 ```
 
 Ejecutar frontend:
@@ -461,7 +494,6 @@ Method: POST
 
 ```env
 TWILIO_WEBHOOK_URL=https://TU_NGROK/webhook/whatsapp
-AUDIO_REPLY_PUBLIC_BASE_URL=https://TU_NGROK
 ```
 
 5. Reiniciar backend.
@@ -502,9 +534,10 @@ Pruebas backend:
 ```powershell
 cd backend
 .\.venv\Scripts\activate
-$env:DATABASE_URL="sqlite:///./credibot_test.db"
-$env:DEBUG="false"
-python -m pytest
+python -m ruff format --check .
+python -m ruff check .
+python -m mypy app
+python -m pytest --cov=app --cov-report=term --cov-report=xml
 ```
 
 Validacion frontend:
@@ -512,6 +545,7 @@ Validacion frontend:
 ```powershell
 cd frontend
 npm run lint
+npm test
 npm run build
 ```
 
@@ -533,13 +567,16 @@ Documentacion operativa:
 
 ## Verificacion realizada
 
-Estado validado el 2026-07-13:
+Estado validado el 2026-07-15:
 
 - Supabase actualizado con central simulada enriquecida.
 - `credit_bureau.find_profile('9990000003')` devuelve Maria Torres Cedeno,
   score 485, riesgo HIGH, deuda 2100, mora maxima 90 y resultado `OBSERVADO`.
-- Backend local: 53 pruebas pasando.
-- Frontend: lint y build correctos.
+- Backend local: 58 pruebas pasando y cobertura superior al 60%.
+- Backend: Ruff, formato y Mypy correctos.
+- Frontend: lint, pruebas y build correctos.
+- Migraciones Alembic validadas en SQLite vacio y PostgreSQL local existente.
+- Dashboard protegido con JWT y roles; webhook Twilio con validacion de firma.
 - GitHub Actions: backend/frontend validan y despliegan.
 - CloudFront responde dashboard y API.
 - Webhook WhatsApp responde por texto.
@@ -551,10 +588,7 @@ Estado validado el 2026-07-13:
 - Configurar dominio propio y certificado ACM.
 - Mover cualquier variable sensible restante a Secrets Manager/SSM.
 - Rotar secretos que hayan sido compartidos fuera de gestores seguros.
-- Validar firma de webhooks Twilio.
-- Agregar autenticacion y roles al dashboard.
-- Agregar rate limiting.
 - Mejorar observabilidad con alarmas CloudWatch.
 - Separar ambientes staging/prod.
 - Deduplicar conversaciones por cliente si se necesita una vista mas ejecutiva.
-- Cambiar el guardado de mensajes del asesor para marcar envio exitoso/fallido.
+- Sustituir el rate limiter en memoria por Redis si se ejecutan varias tareas ECS.

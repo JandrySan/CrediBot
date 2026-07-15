@@ -1,12 +1,33 @@
 from app.services.ai.ai_gateway import AIGateway
 
-
 CONSULTA_KEYWORDS = [
-    "regla", "reglas", "politica", "política", "requisito", "requisitos",
-    "tasa", "interes", "interés", "intereses", "condicion", "condición",
-    "documento", "documentos", "plazo", "maximo", "máximo", "anticipado",
-    "como funciona", "que necesito", "me puedes decir", "podrias",
-    "que es", "cual es", "cuales son", "pregunta", "consulta",
+    "regla",
+    "reglas",
+    "politica",
+    "política",
+    "requisito",
+    "requisitos",
+    "tasa",
+    "interes",
+    "interés",
+    "intereses",
+    "condicion",
+    "condición",
+    "documento",
+    "documentos",
+    "plazo",
+    "maximo",
+    "máximo",
+    "anticipado",
+    "como funciona",
+    "que necesito",
+    "me puedes decir",
+    "podrias",
+    "que es",
+    "cual es",
+    "cuales son",
+    "pregunta",
+    "consulta",
 ]
 
 
@@ -55,13 +76,17 @@ class IntentDetector:
     def _fallback(self, text: str) -> str:
         normalized = text.lower()
 
-        if any(word in normalized for word in ["asesor", "humano", "persona", "agente", "ejecutivo"]):
+        if any(
+            word in normalized for word in ["asesor", "humano", "persona", "agente", "ejecutivo"]
+        ):
             return "asesor"
 
         if any(kw in normalized for kw in CONSULTA_KEYWORDS):
             return "consulta"
 
-        if any(word in normalized for word in ["credito", "crédito", "prestamo", "préstamo", "dinero"]):
+        if any(
+            word in normalized for word in ["credito", "crédito", "prestamo", "préstamo", "dinero"]
+        ):
             return "credito"
 
         if any(word in normalized for word in ["hola", "buenas", "buenos días", "buenas tardes"]):

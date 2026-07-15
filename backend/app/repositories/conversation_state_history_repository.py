@@ -12,17 +12,17 @@ class ConversationStateHistoryRepository:
         conversation_id: int,
         previous_state: str | None,
         new_state: str,
-        reason: str | None = None
+        reason: str | None = None,
     ):
         transition = ConversationStateHistory(
             conversation_id=conversation_id,
             previous_state=previous_state,
             new_state=new_state,
-            reason=reason
+            reason=reason,
         )
 
         self.db.add(transition)
-        self.db.commit()
+        self.db.flush()
         self.db.refresh(transition)
 
         return transition

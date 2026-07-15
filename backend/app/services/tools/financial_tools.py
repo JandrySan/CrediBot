@@ -45,10 +45,10 @@ def calcular_amortizacion(
     if tasa_mensual == 0:
         cuota_mensual = monto / plazo_meses
     else:
-        cuota_mensual = monto * (
-            tasa_mensual * (1 + tasa_mensual) ** plazo_meses
-        ) / (
-            (1 + tasa_mensual) ** plazo_meses - 1
+        cuota_mensual = (
+            monto
+            * (tasa_mensual * (1 + tasa_mensual) ** plazo_meses)
+            / ((1 + tasa_mensual) ** plazo_meses - 1)
         )
 
     saldo = monto
@@ -61,13 +61,15 @@ def calcular_amortizacion(
         saldo -= capital_mes
         total_intereses += interes_mes
 
-        detalle.append({
-            "mes": mes,
-            "cuota": round(cuota_mensual, 2),
-            "interes": round(interes_mes, 2),
-            "capital": round(capital_mes, 2),
-            "saldo": round(abs(saldo), 2),
-        })
+        detalle.append(
+            {
+                "mes": mes,
+                "cuota": round(cuota_mensual, 2),
+                "interes": round(interes_mes, 2),
+                "capital": round(capital_mes, 2),
+                "saldo": round(abs(saldo), 2),
+            }
+        )
 
     total_pagar = monto + total_intereses
 

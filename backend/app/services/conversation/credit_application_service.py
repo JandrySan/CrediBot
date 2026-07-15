@@ -1,6 +1,6 @@
-from decimal import Decimal
 import re
 import unicodedata
+from decimal import Decimal
 
 from app.services.credit_bureau.profile_service import (
     CreditBureauProfileService,
@@ -35,7 +35,7 @@ class CreditApplicationService:
         if data.get("monthly_income") and application.monthly_income is None:
             application.monthly_income = Decimal(str(data["monthly_income"]))
 
-        db.commit()
+        db.flush()
 
     @classmethod
     def is_valid_person_name(cls, value: str) -> bool:
@@ -99,7 +99,7 @@ class CreditApplicationService:
         evaluation = self.rule_engine.evaluate(
             amount=Decimal(application.amount),
             term_months=application.term_months,
-            monthly_income=Decimal(application.monthly_income)
+            monthly_income=Decimal(application.monthly_income),
         )
 
         bureau_profile = self._find_credit_bureau_profile(customer, db)
@@ -121,10 +121,7 @@ class CreditApplicationService:
 
             evaluation = {
                 "result": "OBSERVADO",
-                "reason": (
-                    "La central de riesgo simulada registra "
-                    f"{', '.join(reason_parts)}."
-                ),
+                "reason": (f"La central de riesgo simulada registra {', '.join(reason_parts)}."),
                 "credit_bureau": bureau_profile,
             }
 

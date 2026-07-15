@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+
 from app.models.customer import Customer
 
 
@@ -39,13 +40,12 @@ class CustomerRepository:
         if customer:
             if customer.phone_number != self._normalize_phone(phone_number):
                 customer.phone_number = self._normalize_phone(phone_number)
-                self.db.commit()
-                self.db.refresh(customer)
+                self.db.flush()
             return customer
 
         customer = Customer(phone_number=self._normalize_phone(phone_number))
         self.db.add(customer)
-        self.db.commit()
+        self.db.flush()
         self.db.refresh(customer)
 
         return customer

@@ -55,9 +55,7 @@ def test_close_handoff_conversation_and_start_new_on_next_interaction():
     db = SessionLocal()
     try:
         closed_conversation = (
-            db.query(Conversation)
-            .filter(Conversation.id == conversation_id)
-            .first()
+            db.query(Conversation).filter(Conversation.id == conversation_id).first()
         )
         assert closed_conversation is not None
         assert closed_conversation.status == "CLOSED"

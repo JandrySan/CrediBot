@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -9,7 +9,6 @@ from app.models.conversation import Conversation
 from app.models.conversation_state_history import ConversationStateHistory
 from app.models.message import Message
 from app.state_machine.states import ConversationState
-
 
 OPEN_CONVERSATION_STATUSES = ("ACTIVE", "HANDOFF")
 ABANDONED_CONVERSATION_RESULTS = ("EXPIRADO", "CANCELADA", "CANCELADO")
@@ -55,13 +54,11 @@ class ConversationRepository:
 
     def create_active(self, customer_id: int):
         conversation = Conversation(
-            customer_id=customer_id,
-            current_state=ConversationState.START.value,
-            status="ACTIVE"
+            customer_id=customer_id, current_state=ConversationState.START.value, status="ACTIVE"
         )
 
         self.db.add(conversation)
-        self.db.commit()
+        self.db.flush()
         self.db.refresh(conversation)
 
         return conversation
@@ -71,34 +68,35 @@ class ConversationRepository:
         if timeout <= 0:
             return False
 
-        last_activity = (
-            getattr(conversation, "updated_at", None)
-            or getattr(conversation, "created_at", None)
+        last_activity = getattr(conversation, "updated_at", None) or getattr(
+            conversation, "created_at", None
         )
         if not last_activity:
             return False
 
         if last_activity.tzinfo is None:
-            last_activity = last_activity.replace(tzinfo=timezone.utc)
+            last_activity = last_activity.replace(tzinfo=UTC)
 
         expires_at = last_activity + timedelta(minutes=timeout)
-        return datetime.now(timezone.utc) >= expires_at
+        return datetime.now(UTC) >= expires_at
 
     def close_expired(self, conversation: Conversation):
         conversation.status = "CLOSED"
         conversation.current_state = ConversationState.END.value
         conversation.result = conversation.result or "EXPIRADO"
-        conversation.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
+        conversation.updated_at = datetime.now(UTC)
+        self.db.flush()
         self.db.refresh(conversation)
         return conversation
 
-    def cleanup_expired_open_sessions(self, timeout_minutes: int | None = None, limit: int | None = None) -> int:
+    def cleanup_expired_open_sessions(
+        self, timeout_minutes: int | None = None, limit: int | None = None
+    ) -> int:
         timeout = self._timeout_minutes(timeout_minutes)
         if timeout <= 0:
             return 0
 
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=timeout)
+        cutoff = datetime.now(UTC) - timedelta(minutes=timeout)
         max_rows = limit or settings.CONVERSATION_CLEANUP_BATCH_SIZE
 
         conversations = (
@@ -116,19 +114,21 @@ class ConversationRepository:
             conversation.status = "CLOSED"
             conversation.current_state = ConversationState.END.value
             conversation.result = conversation.result or "EXPIRADO"
-            conversation.updated_at = datetime.now(timezone.utc)
+            conversation.updated_at = datetime.now(UTC)
 
         if conversations:
-            self.db.commit()
+            self.db.flush()
 
         return len(conversations)
 
-    def purge_abandoned_closed_sessions(self, retention_days: int | None = None, limit: int | None = None) -> int:
+    def purge_abandoned_closed_sessions(
+        self, retention_days: int | None = None, limit: int | None = None
+    ) -> int:
         retention = self._retention_days(retention_days)
         if retention <= 0:
             return 0
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=retention)
+        cutoff = datetime.now(UTC) - timedelta(days=retention)
         max_rows = limit or settings.CONVERSATION_CLEANUP_BATCH_SIZE
 
         rows = (
@@ -170,25 +170,27 @@ class ConversationRepository:
         return self._delete_conversations(conversation_ids)
 
     def _delete_conversations(self, conversation_ids: list[int]) -> int:
-        self.db.query(Message).filter(
-            Message.conversation_id.in_(conversation_ids)
-        ).delete(synchronize_session=False)
-        self.db.query(AIAnalysis).filter(
-            AIAnalysis.conversation_id.in_(conversation_ids)
-        ).delete(synchronize_session=False)
+        self.db.query(Message).filter(Message.conversation_id.in_(conversation_ids)).delete(
+            synchronize_session=False
+        )
+        self.db.query(AIAnalysis).filter(AIAnalysis.conversation_id.in_(conversation_ids)).delete(
+            synchronize_session=False
+        )
         self.db.query(ConversationStateHistory).filter(
             ConversationStateHistory.conversation_id.in_(conversation_ids)
         ).delete(synchronize_session=False)
-        deleted_count = self.db.query(Conversation).filter(
-            Conversation.id.in_(conversation_ids)
-        ).delete(synchronize_session=False)
+        deleted_count = (
+            self.db.query(Conversation)
+            .filter(Conversation.id.in_(conversation_ids))
+            .delete(synchronize_session="fetch")
+        )
 
-        self.db.commit()
+        self.db.flush()
         return deleted_count
 
     def touch(self, conversation: Conversation):
-        conversation.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
+        conversation.updated_at = datetime.now(UTC)
+        self.db.flush()
         self.db.refresh(conversation)
         return conversation
 
@@ -218,7 +220,7 @@ class ConversationRepository:
 
     def update_state(self, conversation: Conversation, new_state: str):
         conversation.current_state = new_state
-        self.db.commit()
+        self.db.flush()
         self.db.refresh(conversation)
 
         return conversation
@@ -229,11 +231,11 @@ class ConversationRepository:
             normalized = "TEXT"
 
         conversation.response_mode = normalized
-        self.db.commit()
+        self.db.flush()
         self.db.refresh(conversation)
 
         return conversation
-    
+
     def update_state_if_changed(self, conversation: Conversation, new_state: str):
         previous_state = conversation.current_state
 
@@ -241,7 +243,7 @@ class ConversationRepository:
             return conversation, previous_state, False
 
         conversation.current_state = new_state
-        self.db.commit()
+        self.db.flush()
         self.db.refresh(conversation)
 
         return conversation, previous_state, True
