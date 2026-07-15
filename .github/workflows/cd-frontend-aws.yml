@@ -93,6 +93,7 @@ jobs:
         run: |
           EXPECTED_ASSET=$(grep -o 'assets/index-[^"[:space:]]*\.js' frontend/dist/index.html)
           for attempt in $(seq 1 30); do
+            echo "Verificando publicacion en CloudFront ($attempt/30)..."
             HTML=$(curl --fail --silent --show-error "$FRONTEND_PUBLIC_URL")
             if echo "$HTML" | grep -q "$EXPECTED_ASSET"; then
               exit 0
