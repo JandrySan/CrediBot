@@ -30,6 +30,13 @@ class EntityExtractor:
         - "tres anos" equivale a 36 meses.
         - "dos anos" equivale a 24 meses.
         - "cinco mil" equivale a 5000.
+        - product_code solo se extrae si el usuario aclara gastos personales/consumo o negocio/microcredito.
+        - Un pedido generico de credito o prestamo no define product_code.
+        - full_name solo se extrae si el usuario se presenta de forma explicita, por ejemplo
+          "me llamo Ana Lopez" o "mi nombre es Ana Lopez".
+        - Nunca conviertas intenciones, productos o frases como "simulador de credito",
+          "quiero continuar" o "quiero una simulacion" en full_name.
+        - Una negacion como "no me llamo X" no proporciona un nombre nuevo.
         - Si un dato no existe, usa null.
         """
 

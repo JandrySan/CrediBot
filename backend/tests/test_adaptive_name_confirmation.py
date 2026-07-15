@@ -52,3 +52,20 @@ def test_rejected_bureau_name_is_not_proposed_again():
     assert result == "REJECTED"
     assert flow.slots.status(context, "full_name") == "REJECTED"
     assert customer.full_name is None
+
+
+def test_valid_bureau_name_can_replace_a_previous_invalid_rejected_value():
+    context = _context()
+    flow = AdaptiveCreditFlow(_Database(), ConversationSlotService())
+    flow.slots.set_slot(
+        context,
+        "full_name",
+        "Simulador de Credito",
+        "REJECTED",
+        "SYSTEM_VALIDATION",
+    )
+
+    flow._merge_bureau_name(context, "Juan Perez")
+
+    assert flow.slots.status(context, "full_name") == "PROPOSED"
+    assert flow.slots.value(context, "full_name") == "Juan Perez"

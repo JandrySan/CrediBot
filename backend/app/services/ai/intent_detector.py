@@ -76,9 +76,7 @@ class IntentDetector:
     def _fallback(self, text: str) -> str:
         normalized = text.lower()
 
-        if any(
-            word in normalized for word in ["asesor", "humano", "persona", "agente", "ejecutivo"]
-        ):
+        if any(word in normalized for word in ["asesor", "humano", "agente", "ejecutivo"]):
             return "asesor"
 
         if any(kw in normalized for kw in CONSULTA_KEYWORDS):

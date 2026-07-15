@@ -232,6 +232,24 @@ class ConversationOrchestrator:
         bureau_profile: dict | None,
         side_answer: str = "",
     ) -> str:
+        if self.slots.status(context, "full_name") == "PROPOSED":
+            context.pending_field = "full_name"
+            self._change_state(
+                conversation,
+                ConversationState.ASK_NAME.value,
+                "Se requiere confirmar el nombre sugerido",
+            )
+            question = self.responses.question_for_field(
+                "full_name",
+                customer,
+                application,
+                suggested_value=self.slots.value(context, "full_name"),
+            )
+            return self._save_outbound(
+                conversation.id,
+                self._join_answer_and_question(side_answer, question),
+            )
+
         conflicts = self.slots.conflicts(context)
         if conflicts:
             field, slot = next(iter(conflicts.items()))
@@ -285,17 +303,11 @@ class ConversationOrchestrator:
             )
             return self._save_outbound(
                 conversation.id,
-                self._join_answer_and_question(
-                    side_answer,
-                    self._polish_response(response, text, use_ai=True),
-                ),
+                self._join_answer_and_question(side_answer, response),
             )
 
         response = self.responses.build_already_registered_response(customer, application)
-        return self._save_outbound(
-            conversation.id,
-            self._polish_response(response, text, use_ai=True),
-        )
+        return self._save_outbound(conversation.id, response)
 
     @staticmethod
     def _join_answer_and_question(answer: str, question: str) -> str:

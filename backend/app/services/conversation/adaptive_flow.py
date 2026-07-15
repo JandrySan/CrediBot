@@ -178,7 +178,17 @@ class AdaptiveCreditFlow:
             return
 
         current_value = str(current.get("value") or "")
-        if current.get("status") in {"PROPOSED", "REJECTED"}:
+        if current.get("status") == "PROPOSED":
+            return
+        if current.get("status") == "REJECTED":
+            if current_value != str(bureau_name):
+                self.slots.set_slot(
+                    context,
+                    "full_name",
+                    bureau_name,
+                    "PROPOSED",
+                    "CREDIT_BUREAU",
+                )
             return
         if current_value == str(bureau_name):
             self.slots.verify_slot(context, "full_name", bureau_name)
@@ -190,18 +200,18 @@ class AdaptiveCreditFlow:
     @staticmethod
     def privacy_question() -> str:
         return (
-            "Antes de iniciar: usare los datos que compartas para orientarte, simular y "
-            "gestionar una precalificacion. Podremos consultar una central de riesgo "
-            "simulada solo con otra autorizacion. El resultado no sera una aprobacion final "
-            "y puedes pedir un asesor o revocar tu consentimiento. ¿Aceptas continuar?"
+            "Antes de empezar, necesito tu permiso para usar los datos que compartas "
+            "solo en esta precalificacion. Es una simulacion, no una aprobacion final, "
+            "y puedes detenerte o pedir un asesor cuando quieras.\n\n"
+            "¿Aceptas continuar? Responde si o no."
         )
 
     @staticmethod
     def bureau_question() -> str:
         return (
-            "¿Autorizas que consulte la central de riesgo simulada con tu cedula para revisar "
-            "score, deudas y comportamiento de pago? Puedes decir que no y continuar solo con "
-            "una simulacion, sin evaluacion de historial."
+            "¿Me autorizas a consultar tu historial en la central de riesgo simulada? "
+            "Revisare puntaje, deudas y pagos solo para esta precalificacion.\n\n"
+            "Responde si o no. Si dices no, igual podemos continuar con los datos que me des."
         )
 
     @staticmethod

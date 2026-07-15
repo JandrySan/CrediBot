@@ -106,6 +106,7 @@ class ConversationPolicy:
     @staticmethod
     def welcome_response() -> str:
         return (
-            "Hola, soy CrediBot. Te puedo ayudar con una precalificacion de credito, "
-            "resolver dudas sobre requisitos o derivarte con un asesor. En que te puedo ayudar?"
+            "Hola, soy CrediBot. Puedo explicarte requisitos, hacer una simulacion de "
+            "credito o comunicarte con un asesor.\n\n"
+            "Escribe lo que necesitas. Por ejemplo: Quiero simular un credito."
         )

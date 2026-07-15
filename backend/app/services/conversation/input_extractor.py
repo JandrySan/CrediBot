@@ -113,7 +113,7 @@ class ConversationInputExtractor:
             result["national_id"] = national_id
         if any(word in normalized for word in ("microcredito", "microcrédito", "negocio")):
             result["product_code"] = "MICROCREDITO_MINORISTA_DEMO"
-        elif any(word in normalized for word in ("consumo", "personal", "prestamo", "préstamo")):
+        elif any(word in normalized for word in ("consumo", "personal", "gastos personales")):
             result["product_code"] = "CONSUMO_PERSONAL_DEMO"
 
         age_match = re.search(r"(?:tengo|edad(?:\s+de)?)\s+(\d{1,2})\s+a(?:n|ñ)os", normalized)

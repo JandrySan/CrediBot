@@ -92,23 +92,23 @@ def test_adaptive_flow_accepts_short_answers_and_corrections_without_restarting(
         phone = "+593980999991"
 
         assert "Aceptas continuar" in orchestrator.handle_text_message(phone, "Quiero un prestamo")
-        assert "consumo" in orchestrator.handle_text_message(phone, "si").lower()
+        assert "personal o negocio" in orchestrator.handle_text_message(phone, "si").lower()
         assert "cedula" in orchestrator.handle_text_message(phone, "consumo").lower()
-        assert "Autorizas" in orchestrator.handle_text_message(phone, "9900000001")
+        assert "autorizas" in orchestrator.handle_text_message(phone, "9900000001").lower()
         assert "nombre completo" in orchestrator.handle_text_message(phone, "no").lower()
         assert "edad" in orchestrator.handle_text_message(phone, "Persona Sintetica Demo").lower()
-        assert "ingresos vienen" in orchestrator.handle_text_message(phone, "35").lower()
-        assert "Cuantos meses" in orchestrator.handle_text_message(phone, "empleado")
-        assert "monto" in orchestrator.handle_text_message(phone, "24 meses").lower()
+        assert "ingresos" in orchestrator.handle_text_message(phone, "35").lower()
+        assert "Cuanto tiempo" in orchestrator.handle_text_message(phone, "empleado")
+        assert "cuanto dinero" in orchestrator.handle_text_message(phone, "24 meses").lower()
         assert "cuantos meses" in orchestrator.handle_text_message(phone, "5000").lower()
-        assert "ingreso mensual" in orchestrator.handle_text_message(phone, "36").lower()
-        assert "gastos mensuales" in orchestrator.handle_text_message(phone, "1800").lower()
+        assert "cuanto recibes" in orchestrator.handle_text_message(phone, "36").lower()
+        assert "gastas al mes" in orchestrator.handle_text_message(phone, "1800").lower()
         assert "otras deudas" in orchestrator.handle_text_message(phone, "700").lower()
-        assert "expuesta politicamente" in orchestrator.handle_text_message(phone, "100").lower()
+        assert "cargo publico" in orchestrator.handle_text_message(phone, "100").lower()
 
         result = orchestrator.handle_text_message(phone, "no")
         assert "simulacion informativa" in result.lower()
-        assert "cuota mensual estimada" in result.lower()
+        assert "cuota estimada" in result.lower()
 
         context = db.scalar(select(ConversationContext))
         assert context.slots["employment_tenure"]["value"] == 24

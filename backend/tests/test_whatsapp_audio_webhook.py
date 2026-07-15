@@ -36,7 +36,7 @@ class TestWhatsAppAudioWebhook:
             )
 
         assert response.status_code == 200
-        assert "En que te puedo ayudar" in response.text
+        assert "Escribe lo que necesitas" in response.text
         assert "nombre completo" not in response.text.lower()
 
     def test_hola_clears_invalid_audio_preference_saved_as_name(self):
@@ -86,7 +86,7 @@ class TestWhatsAppAudioWebhook:
             db.close()
 
         assert response.status_code == 200
-        assert "En que te puedo ayudar" in response.text
+        assert "Escribe lo que necesitas" in response.text
         assert "monto deseas solicitar" not in response.text
 
     def test_audio_message_uses_transcription_and_audio_handler(self):

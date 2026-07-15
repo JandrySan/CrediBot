@@ -12,20 +12,19 @@ class ConversationResponseBuilder:
         suggested_value=None,
     ) -> str:
         if field == "privacy_consent":
-            return "¿Aceptas el tratamiento informado de tus datos para continuar?"
+            return "¿Aceptas usar tus datos para esta precalificacion? Responde si o no."
         if field == "product_code":
             return (
-                "¿Buscas un credito de consumo para gastos personales o un microcredito "
-                "para tu negocio?"
+                "¿Para que necesitas el credito: gastos personales o tu negocio? "
+                "Responde personal o negocio."
             )
         if field == "national_id":
             return (
-                "Hola, que gusto saludarte. Soy CrediBot y te ayudare con tu "
-                "precalificacion de credito. Para revisar tu perfil en la central de "
-                "riesgo simulada, me compartes tu cedula de 10 digitos?"
+                "Escribe tu cedula de 10 digitos. La usare para identificar la solicitud; "
+                "antes de revisar el historial te pedire autorizacion."
             )
         if field == "bureau_consent":
-            return "¿Autorizas la consulta de tu historial en la central de riesgo simulada?"
+            return "¿Autorizas revisar tu historial simulado? Responde si o no."
         if field == "full_name":
             if suggested_value:
                 return (
@@ -34,13 +33,16 @@ class ConversationResponseBuilder:
                 )
             return "¿Cual es tu nombre completo? Por ejemplo: Maria Lopez."
         if field == "age":
-            return "¿Cual es tu edad?"
+            return "¿Que edad tienes? Puedes responder, por ejemplo: 35 años."
         if field == "employment_status":
             return (
-                "¿Tus ingresos vienen de un empleo, negocio propio, pension, rentas u otra fuente?"
+                "¿De donde vienen principalmente tus ingresos: empleo, negocio propio, "
+                "jubilacion u otra fuente?"
             )
         if field == "employment_tenure":
-            return "¿Cuantos meses llevas en tu empleo o actividad actual?"
+            return (
+                "¿Cuanto tiempo llevas en ese empleo o negocio? Puedes responder en meses o años."
+            )
         if field == "amount":
             return self._amount_question(customer)
         if field == "term_months":
@@ -49,8 +51,8 @@ class ConversationResponseBuilder:
             return self._income_question(application)
         if field == "monthly_expenses":
             return (
-                "¿Cuanto suman aproximadamente tus gastos mensuales del hogar, sin incluir "
-                "las cuotas de otras deudas?"
+                "Sin contar deudas, ¿cuanto gastas al mes en vivienda, comida, servicios "
+                "y otros gastos del hogar?"
             )
         if field == "existing_debt_payments":
             return (
@@ -59,8 +61,8 @@ class ConversationResponseBuilder:
             )
         if field == "pep_status":
             return (
-                "¿Eres una persona expuesta politicamente (PEP), familiar o asociado cercano "
-                "de una? Puedes responder si, no o no estoy seguro."
+                "¿Tu o un familiar cercano ocupa, u ocupo recientemente, un cargo publico "
+                "importante? Responde si, no o no estoy seguro."
             )
         return "Cuentame un poco mas para poder ayudarte mejor con tu solicitud."
 
@@ -75,18 +77,18 @@ class ConversationResponseBuilder:
     def _amount_question(customer) -> str:
         if customer.full_name:
             return (
-                f"Es un gusto hablar contigo, {customer.full_name}. "
-                "Para continuar con tu precalificacion, que monto deseas solicitar en dolares?"
+                f"Perfecto, {customer.full_name}. ¿Cuanto dinero necesitas? "
+                "Por ejemplo: 5000 dolares."
             )
-        return "Perfecto, para avanzar dime que monto deseas solicitar en dolares."
+        return "¿Cuanto dinero necesitas? Por ejemplo: 5000 dolares."
 
     def _term_question(self, application) -> str:
         if application.amount is not None:
             return (
-                f"Excelente, ya tengo registrado un monto de {self.format_currency(application.amount)}. "
-                "Ahora cuentame en cuantos meses te gustaria pagarlo."
+                f"Tengo el monto: {self.format_currency(application.amount)}. "
+                "¿En cuantos meses te gustaria pagarlo?"
             )
-        return "Perfecto, en cuantos meses te gustaria pagar el credito?"
+        return "¿En cuantos meses te gustaria pagar el credito?"
 
     def _income_question(self, application) -> str:
         details = []
@@ -96,48 +98,93 @@ class ConversationResponseBuilder:
             details.append(f"un plazo de {application.term_months} meses")
 
         if details:
-            return (
-                f"Super, ya tengo {self.human_join(details)}. Para cerrar tu "
-                "precalificacion, cual es tu ingreso mensual aproximado en dolares?"
-            )
-        return (
-            "Gracias. Para cerrar tu precalificacion, cual es tu ingreso mensual "
-            "aproximado en dolares?"
-        )
+            return f"Ya tengo {self.human_join(details)}. ¿Cuanto recibes al mes, aproximadamente?"
+        return "¿Cuanto recibes al mes, aproximadamente?"
 
     def build_result_response(self, evaluation: dict, customer, application) -> str:
-        profile_details = self.profile_snapshot(customer, application)
+        del customer
         result_label = self.human_result_label(evaluation.get("result"))
-        reason = (evaluation.get("reason") or "").strip()
         installment = evaluation.get("estimated_installment")
-        installment_text = (
-            f" La cuota mensual estimada es {self.format_currency(installment)}."
-            if installment is not None
-            else ""
-        )
-        prefix = (
-            f"Listo, con la informacion que me compartiste ({profile_details}), "
-            if profile_details
-            else "Listo, "
-        )
-        return (
-            f"{prefix}tu resultado preliminar es {result_label}.{installment_text} "
-            f"Motivo: {reason}. "
-            "Si deseas, tambien puedo derivarte con un asesor humano."
-        )
+        summary_parts = []
+        if application.amount is not None:
+            summary_parts.append(self.format_currency(application.amount))
+        if application.term_months is not None:
+            summary_parts.append(f"{application.term_months} meses")
+        summary = " a ".join(summary_parts)
+
+        lines = [
+            f"Ya hice la simulacion{f' para {summary}' if summary else ''}.",
+            f"Resultado: {result_label}.",
+        ]
+        if installment is not None:
+            lines.insert(1, f"Cuota estimada: {self.format_currency(installment)} al mes.")
+
+        reasons = self._friendly_result_reasons(evaluation)
+        if reasons:
+            lines.append("Lo mas importante:")
+            lines.extend(f"• {reason}" for reason in reasons)
+
+        if (evaluation.get("result") or "").upper() == "PREQUALIFIED":
+            lines.append("Es una orientacion inicial; la aprobacion requiere verificacion final.")
+        else:
+            lines.append(
+                "No es una decision final. Puedes corregir un dato, pedir una explicacion "
+                "o hablar con un asesor."
+            )
+        return "\n".join(lines)
 
     def build_already_registered_response(self, customer, application) -> str:
-        profile_details = self.profile_snapshot(customer, application)
-        if profile_details:
-            return (
-                f"Tu solicitud ya fue registrada con estos datos: {profile_details}. "
-                "Si quieres continuar o ajustar algo, lo revisamos juntos. Tambien "
-                "puedes escribir asesor para hablar con una persona."
-            )
+        del customer, application
         return (
-            "Tu solicitud ya fue registrada. Si quieres, tambien puedo derivarte con "
-            "un asesor humano."
+            "La simulacion ya esta registrada. Puedes decirme que dato quieres cambiar, "
+            "pedirme una explicacion o escribir asesor."
         )
+
+    @classmethod
+    def _friendly_result_reasons(cls, evaluation: dict) -> list[str]:
+        labels = {
+            "AMOUNT_IN_RANGE": "El monto esta fuera del rango del producto.",
+            "TERM_IN_RANGE": "El plazo esta fuera del rango del producto.",
+            "AGE_REQUIRED": "Falta confirmar la edad.",
+            "MINIMUM_AGE": "La edad no cumple el minimo del producto.",
+            "MAXIMUM_AGE_AT_MATURITY": "La edad al finalizar el credito requiere revision.",
+            "IDENTITY_VERIFIED": "Falta verificar tu identidad.",
+            "PEP_STATUS_REQUIRED": "Falta responder la pregunta sobre cargos publicos.",
+            "PEP_REVIEW": "La condicion declarada requiere revision de un asesor.",
+            "INCOME_REQUIRED": "Falta confirmar el ingreso mensual.",
+            "MINIMUM_MONTHLY_INCOME": "El ingreso esta por debajo del minimo del producto.",
+            "EXPENSES_REQUIRED": "Falta indicar los gastos mensuales.",
+            "EXPENSES_DECLARED": "Los gastos declarados necesitan revision.",
+            "MAXIMUM_PROJECTED_DTI": "La suma de cuotas seria alta frente al ingreso.",
+            "MINIMUM_DISPOSABLE_AFTER_PAYMENT": (
+                "El dinero disponible despues de gastos y cuotas seria insuficiente."
+            ),
+            "JOB_TENURE_REQUIRED": "Falta indicar la antiguedad en el empleo.",
+            "BUSINESS_TENURE_REQUIRED": "Falta indicar la antiguedad del negocio.",
+            "MINIMUM_EMPLOYMENT_TENURE": "La antiguedad laboral requiere revision.",
+            "MINIMUM_BUSINESS_TENURE": "La antiguedad del negocio requiere revision.",
+            "CREDIT_HISTORY_REQUIRED": "No hay historial suficiente para evaluar.",
+            "MINIMUM_CREDIT_SCORE": "El puntaje del historial requiere revision.",
+            "NO_ACTIVE_SEVERE_DELINQUENCY": "Hay una mora importante en el historial.",
+            "MAXIMUM_RECENT_INQUIRIES": "Hay varias consultas recientes en el historial.",
+        }
+        failures = [item for item in evaluation.get("rule_results", []) if not item.get("passed")]
+        priorities = {"NOT_PREQUALIFIED": 0, "MANUAL_REVIEW": 1, "NEEDS_INFORMATION": 2}
+        failures.sort(key=lambda item: priorities.get(item.get("outcome"), 3))
+
+        reasons: list[str] = []
+        for item in failures:
+            code = item.get("code")
+            reason = labels.get(code) or (item.get("explanation") or "").strip()
+            if reason and reason not in reasons:
+                reasons.append(reason)
+            if len(reasons) == 3:
+                break
+        if reasons:
+            return reasons
+
+        fallback = (evaluation.get("reason") or "").strip()
+        return [fallback] if fallback else []
 
     def profile_snapshot(self, customer, application) -> str:
         details: list[str] = []

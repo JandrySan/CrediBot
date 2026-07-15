@@ -31,29 +31,73 @@ def test_sanitize_response_keeps_de_nada_if_user_thanked():
     assert cleaned.startswith("De nada")
 
 
-def test_result_response_integrates_user_data_in_same_message():
+def test_result_response_is_short_and_does_not_repeat_sensitive_profile():
     customer = SimpleNamespace(full_name="Juan Perez", national_id="9990000001")
     application = SimpleNamespace(amount=1200, term_months=24, monthly_income=900)
     text = _responses().build_result_response(
-        evaluation={"result": "PREAPROBADO", "reason": "Cumple reglas base."},
+        evaluation={
+            "result": "NEEDS_INFORMATION",
+            "estimated_installment": 58.25,
+            "reason": "Explicacion extensa de respaldo.",
+            "rule_results": [
+                {
+                    "code": "IDENTITY_VERIFIED",
+                    "outcome": "NEEDS_INFORMATION",
+                    "passed": False,
+                    "explanation": "La identidad debe verificarse.",
+                }
+            ],
+        },
         customer=customer,
         application=application,
     )
-    assert "preaprobado" in text
-    assert "PREAPROBADO" not in text
-    assert "Juan Perez" in text
-    assert "9990000001" in text
+    assert "pendiente de informacion" in text
+    assert "Cuota estimada: $58.25" in text
     assert "24 meses" in text
-    assert "ingresos mensuales" in text
+    assert "Falta verificar tu identidad" in text
+    assert "Juan Perez" not in text
+    assert "9990000001" not in text
+    assert "Motivo:" not in text
 
 
-def test_question_for_national_id_explains_central_risk_lookup():
+def test_result_response_limits_reasons_to_three_clear_points():
+    customer = SimpleNamespace(full_name="Juan Perez", national_id="9990000001")
+    application = SimpleNamespace(amount=5000, term_months=24, monthly_income=2000)
+    failures = [
+        {
+            "code": code,
+            "outcome": outcome,
+            "passed": False,
+            "explanation": code,
+        }
+        for code, outcome in (
+            ("IDENTITY_VERIFIED", "NEEDS_INFORMATION"),
+            ("MINIMUM_CREDIT_SCORE", "MANUAL_REVIEW"),
+            ("NO_ACTIVE_SEVERE_DELINQUENCY", "NOT_PREQUALIFIED"),
+            ("MAXIMUM_RECENT_INQUIRIES", "MANUAL_REVIEW"),
+        )
+    ]
+    text = _responses().build_result_response(
+        evaluation={
+            "result": "NOT_PREQUALIFIED",
+            "estimated_installment": 241.24,
+            "rule_results": failures,
+        },
+        customer=customer,
+        application=application,
+    )
+    assert text.count("•") == 3
+    assert "mora importante" in text
+
+
+def test_question_for_national_id_explains_authorization_before_history_lookup():
     customer = SimpleNamespace(full_name=None, national_id=None)
     application = SimpleNamespace(amount=None, term_months=None, monthly_income=None)
     text = _responses().question_for_field("national_id", customer, application)
     assert "cedula" in text.lower()
     assert "10 digitos" in text.lower()
-    assert "central de riesgo" in text.lower()
+    assert "historial" in text.lower()
+    assert "autorizacion" in text.lower()
 
 
 def test_question_for_name_is_cordial_and_requests_full_name():
@@ -81,13 +125,13 @@ def test_question_for_amount_mentions_pleasure_and_name():
     customer = SimpleNamespace(full_name="Carlos")
     application = SimpleNamespace(amount=None, term_months=None, monthly_income=None)
     text = _responses().question_for_field("amount", customer, application)
-    assert "Es un gusto hablar contigo, Carlos" in text
-    assert "monto" in text.lower()
+    assert "Perfecto, Carlos" in text
+    assert "Cuanto dinero" in text
 
 
 def test_plain_greeting_gets_welcome_without_requesting_name():
     text = ConversationPolicy.welcome_response()
-    assert "en que te puedo ayudar" in text.lower()
+    assert "escribe lo que necesitas" in text.lower()
     assert "nombre completo" not in text.lower()
 
 
@@ -167,3 +211,9 @@ def test_person_name_does_not_trigger_handoff():
         "Quiero hablar con una persona real",
         {"intent": "credito"},
     )
+
+
+def test_intent_fallback_does_not_treat_the_word_persona_as_handoff():
+    from app.services.ai.intent_detector import IntentDetector
+
+    assert IntentDetector()._fallback("Soy una persona independiente") != "asesor"
