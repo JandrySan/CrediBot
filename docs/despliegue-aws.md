@@ -189,6 +189,12 @@ Behaviors:
 - `/webhook/*` -> ALB backend.
 - `/*` -> S3 frontend.
 
+El comportamiento por defecto de S3 usa la CloudFront Function
+`credibot-spa-rewrite`, versionada en
+`infrastructure/cloudfront/spa-rewrite.js`, para resolver rutas de React con
+`index.html`. No se deben convertir globalmente los errores `403` en `200`,
+porque eso ocultaria respuestas de seguridad provenientes del backend.
+
 Ventajas:
 
 - No hay contenido mixto.
