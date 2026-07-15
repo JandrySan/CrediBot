@@ -66,18 +66,20 @@ Usuario WhatsApp
 
 ## Flujo de precalificacion
 
-1. El usuario escribe por WhatsApp.
-2. Twilio llama `POST /webhook/whatsapp`.
-3. Si el mensaje trae audio, se transcribe y entra al mismo flujo de texto.
-4. El bot saluda y pregunta la cedula cuando el usuario quiere precalificar.
-5. La cedula se busca en la central de riesgo simulada.
-6. Si la cedula existe, se autocompleta el nombre.
-7. Si no existe, el bot pide nombre completo.
-8. El bot pide monto, plazo e ingreso mensual.
-9. El motor de reglas calcula una decision preliminar.
-10. La central simulada puede convertir el resultado en `OBSERVADO`.
-11. Se guarda la conversacion, solicitud, mensajes, analisis IA y cambios de estado.
-12. El dashboard recibe eventos por WebSocket.
+1. El usuario escribe o envia un audio por WhatsApp.
+2. El bot identifica la intencion y responde preguntas laterales sin perder el avance.
+3. Antes de extraer datos personales, presenta el aviso y registra el consentimiento.
+4. Acepta varios datos en un mensaje, en cualquier orden, y conserva su procedencia.
+5. Solicita solo los campos faltantes del producto: identidad, perfil, monto, plazo,
+   ingresos, gastos y deudas.
+6. La consulta de la central simulada se habilita unicamente con autorizacion separada.
+7. Si el usuario corrige un dato, mantiene el historial, invalida el resultado anterior y
+   vuelve a calcular.
+8. El motor versionado consulta productos y reglas vigentes en PostgreSQL, calcula cuota,
+   endeudamiento e ingreso disponible y devuelve codigos de razon auditables.
+9. El resultado es una simulacion de precalificacion; nunca una aprobacion definitiva.
+10. La conversacion, los consentimientos, el contexto por campos y la evaluacion quedan
+    disponibles para revision humana en el dashboard.
 
 Cedulas ficticias utiles para pruebas:
 
@@ -95,6 +97,18 @@ Cedulas ficticias utiles para pruebas:
 | `9990000014` | Roberto Quiroz Velez, score 420, cobranza judicial | `OBSERVADO` |
 | `9990000012` | Hugo Andrade Cevallos, score 790, riesgo bajo | perfil favorable |
 
+El lote masivo agrega 10.000 perfiles con cedulas reservadas para pruebas que comienzan
+por `99`. Ejemplos representativos:
+
+| Cedula | Riesgo sintetico | Puntaje |
+| --- | --- | --- |
+| `9900009534` | bajo | 700 |
+| `9900004853` | medio | 580 |
+| `9900009740` | alto | 300 |
+
+El manifiesto completo del lote esta en
+[`docs/dataset-sintetico-crediticio.md`](docs/dataset-sintetico-crediticio.md).
+
 ## Central de riesgo simulada
 
 La central de riesgo vive en el schema `credit_bureau` de Supabase.
@@ -103,6 +117,8 @@ Migraciones relevantes:
 
 - `supabase/migrations/20260713005730_credit_bureau_simulation.sql`
 - `supabase/migrations/20260713070000_enrich_credit_bureau_simulation.sql`
+- `backend/alembic/versions/20260715_02_credit_origination_domain.py`
+- `backend/alembic/versions/20260715_03_seed_demo_credit_policy.py`
 
 Tablas y objetos principales:
 
@@ -112,6 +128,7 @@ Tablas y objetos principales:
 - `credit_bureau.credit_score_snapshots`
 - `credit_bureau.risk_events`
 - `credit_bureau.credit_inquiries`
+- `credit_bureau.dataset_batches`
 - `credit_bureau.credit_profile_summary`
 - `credit_bureau.find_profile(identifier TEXT)`
 
@@ -145,39 +162,32 @@ Campos usados por el bot:
 - `recommended_max_installment`
 - `preliminary_history_result`
 
-## Estados de conversacion
+## Contexto adaptable de conversacion
 
-Definidos en `backend/app/state_machine/states.py`:
+Los estados de `backend/app/state_machine/states.py` indican que pregunta conviene hacer,
+pero no imponen una secuencia rigida. `conversation_contexts` guarda cada campo con estado,
+fuente, confianza, historial de correcciones y posibles conflictos. El orquestador puede
+recibir datos adelantados, resolver una FAQ y retomar, o pedir una aclaracion concreta sin
+reiniciar la solicitud.
 
-- `START`
-- `ASK_NATIONAL_ID`
-- `ASK_NAME`
-- `ASK_AMOUNT`
-- `ASK_TERM`
-- `ASK_INCOME`
-- `SHOW_RESULT`
-- `HANDOFF`
-- `END`
-
-El primer dato requerido para una precalificacion normal es `national_id`.
+La central de riesgo no se consulta por el solo hecho de recibir una cedula: requiere que
+el campo `bureau_consent` este aceptado. Si el usuario no autoriza, el bot puede continuar
+con una simulacion basada en datos declarados y la etiqueta `SIMULATION_ONLY`.
 
 ## Reglas de negocio
 
-Archivo: `backend/app/services/rules/credit_rule_engine.py`
+El motor principal esta en
+`backend/app/services/rules/versioned_credit_rule_engine.py`. Productos, requisitos y
+reglas se leen de la base y quedan asociados a la version `DEMO_EC_2026_01`.
 
-Reglas base:
-
-- Si `monthly_income < 600` -> `OBSERVADO`.
-- Si `amount > monthly_income * 8` -> `OBSERVADO`.
-- Si `term_months > 60` -> `OBSERVADO`.
-- Caso contrario -> `PREAPROBADO`.
-
-Luego se consulta la central simulada. Si `preliminary_history_result` es
-`OBSERVADO`, el resultado final queda `OBSERVADO` aunque las reglas base pasen.
+La evaluacion incluye rango de monto y plazo, edad, verificacion de identidad, condicion
+PEP, ingreso minimo, gastos declarados, endeudamiento proyectado, ingreso disponible,
+estabilidad, puntaje, mora severa y consultas recientes. Cada regla devuelve su codigo,
+entradas y efecto (`NEEDS_INFORMATION`, `MANUAL_REVIEW` o `NOT_PREQUALIFIED`).
 
 La IA no aprueba creditos. La IA ayuda a detectar intencion, extraer datos,
-pulir respuestas y responder FAQs; la decision sale de reglas explicitas y de la
-central simulada.
+usar herramientas autorizadas, pulir respuestas y responder FAQs; la decision sale de
+reglas explicitas, versionadas y auditables.
 
 ## Audio
 
