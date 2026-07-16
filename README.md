@@ -625,6 +625,9 @@ Documentacion operativa:
 
 La evidencia academica se mantiene como codigo y se puede revisar desde estos indices:
 
+- [Tablero publico de GitHub Projects](https://github.com/users/diegocalva04/projects/1):
+  Product Backlog y Kanban con 20 historias reales del repositorio, estados, epicas,
+  iteraciones, prioridad MoSCoW y Story Points.
 - [`docs/gestion-agil/README.md`](docs/gestion-agil/README.md): backlog, estimaciones,
   priorizacion MoSCoW, iteraciones, ceremonias, cambio reestimado, metricas,
   retrospectiva y contribuciones.
