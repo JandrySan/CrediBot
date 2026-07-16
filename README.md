@@ -621,6 +621,22 @@ Documentacion operativa:
 - `docs/despliegue-aws.md`
 - `docs/diagnostico-ecs-supabase.md`
 
+## Gestion agil, modelado y presentacion
+
+La evidencia academica se mantiene como codigo y se puede revisar desde estos indices:
+
+- [`docs/gestion-agil/README.md`](docs/gestion-agil/README.md): backlog, estimaciones,
+  priorizacion MoSCoW, iteraciones, ceremonias, cambio reestimado, metricas,
+  retrospectiva y contribuciones.
+- [`docs/modelado/README.md`](docs/modelado/README.md): Story Mapping, contexto,
+  contenedores, dominio, maquina de estados y derivacion humana en Mermaid.
+- [`docs/presentacion/guion-demo.md`](docs/presentacion/guion-demo.md): demostracion
+  reproducible de 12 minutos y plan alterno.
+
+Las fechas de trabajo se obtienen de Git y GitHub Actions. La consolidacion documental
+esta fechada el 15 de julio de 2026 y distingue expresamente la evidencia observada de
+las decisiones reconstruidas al cierre.
+
 ## Verificacion realizada
 
 Estado validado el 2026-07-15:
