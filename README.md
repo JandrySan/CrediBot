@@ -388,6 +388,34 @@ por CloudFront.
 
 ## Instalacion, ejecucion y uso
 
+Esta es la guia unica para usar el sistema desplegado y para levantar el
+proyecto localmente.
+
+### Uso del despliegue productivo
+
+Accesos actuales:
+
+- Dashboard: `https://d30z3dsmpm7ctx.cloudfront.net`
+- API publica: `https://d30z3dsmpm7ctx.cloudfront.net/api/...`
+- Webhook WhatsApp: `https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp`
+
+Autenticacion del dashboard:
+
+- Usuario administrador: `admin`
+- Contrasena: `iy3XyFDGHzBrFkCsXZ1XGAx4Rx1aUgFb`
+
+Pasos de uso:
+
+1. Abrir el dashboard productivo.
+2. Iniciar sesion con el usuario administrador.
+3. Revisar `/panel` para ver el resumen operativo.
+4. Entrar a `/conversaciones` para revisar chats, tomar casos y responder.
+5. Usar `/faqs` para cargar o eliminar preguntas frecuentes.
+6. Usar `/analitica` para revisar indicadores operativos.
+7. Usar `/configuracion` para confirmar API, WebSocket y webhook activos.
+8. Para probar WhatsApp, unir el telefono al Sandbox de Twilio enviando
+   `join product-origin` al numero `whatsapp:+14155238886`.
+
 ### Requisitos previos
 
 - Python 3.12 o compatible.
@@ -399,7 +427,14 @@ por CloudFront.
 
 ### Instalacion backend
 
-Desde la raiz del proyecto:
+Desde la carpeta donde se quiera descargar el proyecto:
+
+```powershell
+git clone https://github.com/JandrySan/CrediBot.git
+cd CrediBot
+```
+
+Instalar dependencias del backend:
 
 ```powershell
 cd backend
@@ -423,6 +458,10 @@ Para desarrollo rapido con SQLite:
 ```powershell
 $env:DATABASE_URL="sqlite:///./credibot_dev.db"
 $env:DEBUG="false"
+$env:DASHBOARD_AUTH_ENABLED="false"
+$env:TWILIO_ENABLED="false"
+$env:AUDIO_STT_ENABLED="false"
+$env:AUDIO_REPLY_ENABLED="false"
 ```
 
 Para usar Supabase/PostgreSQL:
@@ -508,7 +547,7 @@ TWILIO_WEBHOOK_URL=https://TU_NGROK/webhook/whatsapp
 ```
 
 5. Reiniciar backend.
-6. Unir el telefono al sandbox con el codigo `join ...`.
+6. Unir el telefono al sandbox con el codigo `join product-origin`.
 7. Enviar mensajes al numero de Twilio Sandbox.
 
 ### Uso del sistema
@@ -593,13 +632,3 @@ Estado validado el 2026-07-15:
 - Webhook WhatsApp responde por texto.
 - Preferencia `responde en audio` devuelve `<Media>` con archivo `audio/ogg`.
 - Flujo completo con cedula `9990000003` termina en `OBSERVADO`.
-
-## Pendientes recomendados
-
-- Configurar dominio propio y certificado ACM.
-- Mover cualquier variable sensible restante a Secrets Manager/SSM.
-- Rotar secretos que hayan sido compartidos fuera de gestores seguros.
-- Mejorar observabilidad con alarmas CloudWatch.
-- Separar ambientes staging/prod.
-- Deduplicar conversaciones por cliente si se necesita una vista mas ejecutiva.
-- Sustituir el rate limiter en memoria por Redis si se ejecutan varias tareas ECS.
