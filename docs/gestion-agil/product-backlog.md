@@ -32,9 +32,9 @@ Línea base consolidada: 15 de julio de 2026.
 | US-13 | EP-05 | Proteger dashboard, webhook y secretos | Must | 8 | L | 2 | Done |
 | US-14 | EP-02 | Versionar productos, políticas y datos sintéticos | Should | 13 | XL | 2 | Done |
 | US-15 | EP-04 | Adaptar el diálogo al orden y correcciones del usuario | Must | 13 | XL | 2 | Done |
-| US-16 | EP-01 | Usar plantillas transaccionales versionadas | Must | 3 | S | 2 | In progress |
-| US-17 | EP-06 | Mantener modelos Mermaid vivos | Must | 8 | L | 2 | In progress |
-| US-18 | EP-06 | Mantener backlog, métricas y evidencia individual | Must | 8 | L | 2 | In progress |
+| US-16 | EP-01 | Usar plantillas transaccionales versionadas | Must | 3 | S | 2 | Done |
+| US-17 | EP-06 | Mantener modelos Mermaid vivos | Must | 8 | L | 2 | Done |
+| US-18 | EP-06 | Mantener backlog, métricas y evidencia individual | Must | 8 | L | 2 | Done |
 | US-19 | EP-05 | Incorporar alarmas operativas de CloudWatch | Could | 5 | M | Futuro | Product Backlog |
 | US-20 | EP-05 | Separar ambientes staging y producción | Could | 8 | L | Futuro | Product Backlog |
 
