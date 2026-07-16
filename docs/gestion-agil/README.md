@@ -32,14 +32,16 @@ colectiva de la reconstrucción y evita atribuir asistencia o acuerdos no verifi
 - Estimación: Planning Poker con escala Fibonacci `1, 2, 3, 5, 8, 13`.
 - Equivalencia visual: XS = 1, S = 2–3, M = 5, L = 8, XL = 13.
 - Priorización: MoSCoW.
-- Tablero: GitHub Projects, con estados `Product Backlog`, `Ready`, `In progress`,
-  `In review` y `Done`.
+- Tablero: [GitHub Projects público](https://github.com/users/diegocalva04/projects/1),
+  con vistas `Product Backlog` y `Tablero Kanban`; sus campos ágiles usan los estados
+  `Product Backlog`, `Ready`, `In progress`, `In review` y `Done`.
 - Definición de terminado: criterios aceptados, pruebas pertinentes aprobadas,
   revisión de código, documentación actualizada y CI en verde.
 
 ## Índice de evidencias
 
 - [Product Backlog](product-backlog.md)
+- [Tablero de GitHub Projects](tablero-github.md)
 - [Iteración 1](iteracion-1.md)
 - [Iteración 2](iteracion-2.md)
 - [Cambio de requisito CR-001](cambio-requisito-cr-001.md)
