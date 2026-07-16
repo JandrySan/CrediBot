@@ -84,6 +84,22 @@ def _disable_external_ai(orchestrator: ConversationOrchestrator) -> None:
     )
 
 
+def test_handoff_confirms_transaction_and_then_silences_bot():
+    with _rollback_session() as db:
+        orchestrator = ConversationOrchestrator(db)
+        _disable_external_ai(orchestrator)
+        phone = "+593980999990"
+
+        confirmation = orchestrator.handle_text_message(
+            phone,
+            "Quiero hablar con una persona real",
+        )
+        silent_follow_up = orchestrator.handle_text_message(phone, "¿Ya viene el asesor?")
+
+        assert "envié tu conversación" in confirmation
+        assert silent_follow_up == ""
+
+
 def test_adaptive_flow_accepts_short_answers_and_corrections_without_restarting():
     with _rollback_session() as db:
         _seed_product_and_policy(db)

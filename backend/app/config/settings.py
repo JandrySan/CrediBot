@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     TWILIO_WEBHOOK_URL: str = ""
     TWILIO_ENABLED: bool = False
     TWILIO_VALIDATE_SIGNATURE: bool = True
+    TWILIO_CONTENT_TEMPLATE_SIDS: str = ""
 
     DASHBOARD_AUTH_ENABLED: bool = True
     DASHBOARD_ADMIN_USERNAME: str = "admin"

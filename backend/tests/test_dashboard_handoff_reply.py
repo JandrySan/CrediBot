@@ -39,7 +39,7 @@ def test_take_conversation_resets_audio_mode_and_notifies_customer():
 
     with (
         patch(
-            "app.services.dashboard.conversation_service.TwilioWhatsAppService.send_message",
+            "app.services.dashboard.conversation_service.TwilioWhatsAppService.send_template",
             return_value={"success": True, "sid": "SM123"},
         ) as sender,
         TestClient(app) as client,
@@ -52,6 +52,8 @@ def test_take_conversation_resets_audio_mode_and_notifies_customer():
     assert payload["status"] == "HANDOFF"
     assert payload["customer_notified"] is True
     assert sender.called
+    assert sender.call_args.kwargs["template_key"] == "advisor_assigned"
+    assert sender.call_args.kwargs["variables"] == {"advisor_name": "Un asesor humano"}
 
     db = SessionLocal()
     try:

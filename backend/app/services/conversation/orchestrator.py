@@ -23,6 +23,10 @@ from app.services.conversation.input_extractor import ConversationInputExtractor
 from app.services.conversation.policy import ConversationPolicy
 from app.services.conversation.response_builder import ConversationResponseBuilder
 from app.services.conversation.slot_service import ConversationSlotService
+from app.services.whatsapp.templates import (
+    TransactionalTemplateKey,
+    render_transactional_template,
+)
 from app.state_machine.states import ConversationState
 from app.state_machine.transitions import can_transition
 
@@ -88,6 +92,12 @@ class ConversationOrchestrator:
             return self._answer_with_ai(conversation.id, text)
         if conversation.status == "HANDOFF":
             return ""
+        if ConversationPolicy.is_handoff_requested(text, {}):
+            self._handoff(conversation)
+            return self._save_outbound(
+                conversation.id,
+                render_transactional_template(TransactionalTemplateKey.HANDOFF_REQUESTED),
+            )
 
         self.adaptive_flow.handle_pending_consent(
             context,
@@ -174,7 +184,10 @@ class ConversationOrchestrator:
 
         if ConversationPolicy.is_handoff_requested(text, ai_data):
             self._handoff(conversation)
-            return ""
+            return self._save_outbound(
+                conversation.id,
+                render_transactional_template(TransactionalTemplateKey.HANDOFF_REQUESTED),
+            )
         if ConversationPolicy.should_send_welcome(
             conversation,
             customer,

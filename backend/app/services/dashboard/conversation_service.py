@@ -7,6 +7,7 @@ from app.models.credit_application import CreditApplication
 from app.models.customer import Customer
 from app.models.message import Message
 from app.services.conversation.session_service import ConversationSessionService
+from app.services.whatsapp.templates import TransactionalTemplateKey
 from app.services.whatsapp.twilio_service import TwilioWhatsAppService
 from app.state_machine.states import ConversationState
 
@@ -39,12 +40,10 @@ class DashboardConversationService:
 
         twilio_result = {"success": False, "message": "Cliente no encontrado"}
         if customer:
-            twilio_result = TwilioWhatsAppService().send_message(
+            twilio_result = TwilioWhatsAppService().send_template(
                 to=customer.phone_number,
-                body=(
-                    "Un asesor humano tomo tu conversacion. Desde ahora te "
-                    "respondera directamente por este chat."
-                ),
+                template_key=TransactionalTemplateKey.ADVISOR_ASSIGNED,
+                variables={"advisor_name": "Un asesor humano"},
             )
 
         return {

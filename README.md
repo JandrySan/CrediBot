@@ -318,6 +318,7 @@ TWILIO_AUTH_TOKEN=
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 TWILIO_WEBHOOK_URL=https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp
 TWILIO_VALIDATE_SIGNATURE=true
+TWILIO_CONTENT_TEMPLATE_SIDS={}
 
 DASHBOARD_AUTH_ENABLED=true
 DASHBOARD_ADMIN_USERNAME=admin
@@ -339,6 +340,11 @@ ABANDONED_CONVERSATION_RETENTION_DAYS=7
 
 En AWS, los valores sensibles deben vivir en Secrets Manager o SSM, no en el
 repositorio.
+
+`TWILIO_CONTENT_TEMPLATE_SIDS` es opcional y no contiene secretos. Permite asociar
+las confirmaciones transaccionales con plantillas aprobadas de Twilio; el Sandbox usa
+automáticamente el texto versionado. Consulta
+[`docs/plantillas-whatsapp.md`](docs/plantillas-whatsapp.md).
 
 Secrets usados en produccion:
 
