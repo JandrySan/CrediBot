@@ -64,7 +64,7 @@ asesor que opera desde un dashboard. El sistema está desplegado y cuenta con CI
 
 - Velocidad: 53 SP y 71 SP; media de 62 SP.
 - Actividad: 80 commits en los dos cortes funcionales.
-- Cobertura backend previa al cierre: 66,6 % de líneas.
+- Calidad backend al cierre: 93 pruebas y 72,49 % de cobertura total.
 - Pipeline: cuatro workflows funcionales.
 - Despliegue: frontend y API accesibles por CloudFront.
 - Integrantes con evidencia Git: cuatro.

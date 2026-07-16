@@ -644,7 +644,7 @@ Estado validado el 2026-07-15:
 - Supabase actualizado con central simulada enriquecida.
 - `credit_bureau.find_profile('9990000003')` devuelve Maria Torres Cedeno,
   score 485, riesgo HIGH, deuda 2100, mora maxima 90 y resultado `OBSERVADO`.
-- Backend local: 58 pruebas pasando y cobertura superior al 60%.
+- Backend local: 93 pruebas pasando y cobertura de 72,49%.
 - Backend: Ruff, formato y Mypy correctos.
 - Frontend: lint, pruebas y build correctos.
 - Migraciones Alembic validadas en SQLite vacio y PostgreSQL local existente.

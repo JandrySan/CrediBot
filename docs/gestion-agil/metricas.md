@@ -73,8 +73,8 @@ ausencia de trabajo personal. No se atribuye actividad que Git no permite verifi
 
 | Indicador | Resultado observado |
 | --- | --- |
-| Cobertura de líneas backend | 66,6 % en `backend/coverage.xml` antes del cierre |
-| Módulos de prueba backend | 24 antes de US-16; 25 después de plantillas |
+| Cobertura total backend | 72,49 % después del cierre |
+| Pruebas backend | 93 aprobadas en 25 módulos |
 | Pruebas frontend | Suite Vitest de métricas |
 | Calidad backend | Ruff format, Ruff check y Mypy en CI |
 | Calidad frontend | ESLint, Vitest y build TypeScript/Vite en CI |
@@ -91,3 +91,6 @@ ausencia de trabajo personal. No se atribuye actividad que Git no permite verifi
   comportamiento sobre nuevas funciones comerciales.
 - US-19 y US-20 quedan en backlog porque alarmas y staging aportan más valor operativo
   que continuar ampliando el MVP académico.
+
+La ejecución integral del cierre también aprobó 2 pruebas frontend, lint, Mypy, Ruff y
+el build productivo de Vite.
