@@ -318,6 +318,7 @@ TWILIO_AUTH_TOKEN=
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
 TWILIO_WEBHOOK_URL=https://d30z3dsmpm7ctx.cloudfront.net/webhook/whatsapp
 TWILIO_VALIDATE_SIGNATURE=true
+TWILIO_CONTENT_TEMPLATE_SIDS={}
 
 DASHBOARD_AUTH_ENABLED=true
 DASHBOARD_ADMIN_USERNAME=admin
@@ -339,6 +340,11 @@ ABANDONED_CONVERSATION_RETENTION_DAYS=7
 
 En AWS, los valores sensibles deben vivir en Secrets Manager o SSM, no en el
 repositorio.
+
+`TWILIO_CONTENT_TEMPLATE_SIDS` es opcional y no contiene secretos. Permite asociar
+las confirmaciones transaccionales con plantillas aprobadas de Twilio; el Sandbox usa
+automáticamente el texto versionado. Consulta
+[`docs/plantillas-whatsapp.md`](docs/plantillas-whatsapp.md).
 
 Secrets usados en produccion:
 
@@ -615,6 +621,22 @@ Documentacion operativa:
 - `docs/despliegue-aws.md`
 - `docs/diagnostico-ecs-supabase.md`
 
+## Gestion agil, modelado y presentacion
+
+La evidencia academica se mantiene como codigo y se puede revisar desde estos indices:
+
+- [`docs/gestion-agil/README.md`](docs/gestion-agil/README.md): backlog, estimaciones,
+  priorizacion MoSCoW, iteraciones, ceremonias, cambio reestimado, metricas,
+  retrospectiva y contribuciones.
+- [`docs/modelado/README.md`](docs/modelado/README.md): Story Mapping, contexto,
+  contenedores, dominio, maquina de estados y derivacion humana en Mermaid.
+- [`docs/presentacion/guion-demo.md`](docs/presentacion/guion-demo.md): demostracion
+  reproducible de 12 minutos y plan alterno.
+
+Las fechas de trabajo se obtienen de Git y GitHub Actions. La consolidacion documental
+esta fechada el 15 de julio de 2026 y distingue expresamente la evidencia observada de
+las decisiones reconstruidas al cierre.
+
 ## Verificacion realizada
 
 Estado validado el 2026-07-15:
@@ -622,7 +644,7 @@ Estado validado el 2026-07-15:
 - Supabase actualizado con central simulada enriquecida.
 - `credit_bureau.find_profile('9990000003')` devuelve Maria Torres Cedeno,
   score 485, riesgo HIGH, deuda 2100, mora maxima 90 y resultado `OBSERVADO`.
-- Backend local: 58 pruebas pasando y cobertura superior al 60%.
+- Backend local: 93 pruebas pasando y cobertura de 72,49%.
 - Backend: Ruff, formato y Mypy correctos.
 - Frontend: lint, pruebas y build correctos.
 - Migraciones Alembic validadas en SQLite vacio y PostgreSQL local existente.

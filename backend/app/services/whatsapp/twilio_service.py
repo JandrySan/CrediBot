@@ -1,9 +1,17 @@
+import json
 import time
+from collections.abc import Mapping
 
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
 from app.config.settings import settings
+from app.services.whatsapp.templates import (
+    TransactionalTemplateKey,
+    get_transactional_template,
+    render_transactional_template,
+    twilio_content_variables,
+)
 
 
 class TwilioWhatsAppService:
@@ -38,6 +46,38 @@ class TwilioWhatsAppService:
         self.client = Client(sid, settings.TWILIO_AUTH_TOKEN)
 
     def send_message(self, to: str, body: str):
+        return self._send(to=to, body=body)
+
+    def send_template(
+        self,
+        to: str,
+        template_key: TransactionalTemplateKey | str,
+        variables: Mapping[str, object] | None = None,
+    ):
+        template = get_transactional_template(template_key)
+        body = render_transactional_template(template.key, variables)
+        content_sid = self._content_sid_for(template.key)
+
+        result = self._send(
+            to=to,
+            body=None if content_sid else body,
+            content_sid=content_sid,
+            content_variables=(
+                twilio_content_variables(template.key, variables) if content_sid else None
+            ),
+        )
+        result["template_key"] = template.key.value
+        result["template_version"] = template.version
+        result["template_transport"] = "content_sid" if content_sid else "sandbox_text"
+        return result
+
+    def _send(
+        self,
+        to: str,
+        body: str | None,
+        content_sid: str | None = None,
+        content_variables: Mapping[str, str] | None = None,
+    ):
         if not self.enabled:
             return {
                 "success": False,
@@ -64,7 +104,16 @@ class TwilioWhatsAppService:
             return {"success": False, "message": "Cliente de Twilio no inicializado"}
 
         try:
-            message = client.messages.create(from_=from_number, to=to_number, body=body)
+            payload: dict[str, object] = {"from_": from_number, "to": to_number}
+            if content_sid:
+                payload["content_sid"] = content_sid
+                payload["content_variables"] = json.dumps(
+                    content_variables or {}, ensure_ascii=False
+                )
+            else:
+                payload["body"] = body or ""
+
+            message = client.messages.create(**payload)
             status_result = self._wait_for_send_status(message.sid, message)
             if not status_result["success"]:
                 return status_result
@@ -159,6 +208,20 @@ class TwilioWhatsAppService:
 
     def _get_from_number(self) -> str:
         return (settings.TWILIO_WHATSAPP_FROM or "").strip()
+
+    @staticmethod
+    def _content_sid_for(template_key: TransactionalTemplateKey) -> str | None:
+        raw_mapping = (getattr(settings, "TWILIO_CONTENT_TEMPLATE_SIDS", "") or "").strip()
+        if not raw_mapping:
+            return None
+        try:
+            mapping = json.loads(raw_mapping)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(mapping, dict):
+            return None
+        content_sid = str(mapping.get(template_key.value, "")).strip()
+        return content_sid or None
 
     @staticmethod
     def _normalize_phone_number(phone_number: str) -> str:
